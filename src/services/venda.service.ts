@@ -1,0 +1,160 @@
+/**
+ * @module VendaService
+ * @description Serviço de lógica de negócio para Vendas
+ *
+ * Responsabilidades:
+ * - Criação de vendas com validação de estoque
+ * - Cálculo de totais e descontos
+ * - Atualização de estoque via Kardex
+ * - Geração de movimentações financeiras
+ */
+
+import { eq } from "drizzle-orm";
+import { getDb } from "../libs/db";
+import { vendas, itensVenda, movimentacoesEstoque, movimentacoesCaixa, produtos } from "../../drizzle/schema";
+import type { CreateVendaInput } from "../models/venda.model";
+import { produtoService } from "./produto.service";
+
+export class VendaService {
+  /**
+   * Lista todas as vendas
+   */
+  async list(): Promise<any[]> {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(vendas);
+  }
+
+  /**
+   * Cria nova venda
+   * - Valida estoque de todos os produtos
+   * - Calcula totais
+   * - Cria movimentações de estoque
+   * - Registra movimentação de caixa
+   */
+  async create(data: CreateVendaInput, usuarioId: number): Promise<any> {
+    const db = await getDb();
+    if (!db) throw new Error("Database not available");
+
+    // Validar estoque de todos os produtos
+    for (const item of data.itens) {
+      const temEstoque = await produtoService.checkEstoque(item.produtoId, item.quantidade);
+
+      if (!temEstoque) {
+        const produto = await produtoService.getById(item.produtoId);
+        throw new Error(`Estoque insuficiente para ${produto?.descricao}. Disponível: ${produto?.estoque}`);
+      }
+    }
+
+    // Calcular totais (valores em centavos)
+    let valorTotal = 0;
+    for (const item of data.itens) {
+      const subtotal = item.quantidade * item.precoUnitario;
+      valorTotal += subtotal;
+    }
+
+    const valorDesconto = data.desconto || 0;
+    const valorLiquido = valorTotal - valorDesconto;
+
+    // Gerar número da venda
+    const numeroVenda = `V${Date.now()}`;
+
+    // Criar venda
+    const [vendaResult] = await db.insert(vendas).values({
+      numeroVenda,
+      dataVenda: new Date(),
+      valorTotal,
+      valorDesconto,
+      valorLiquido,
+      formaPagamento: data.formaPagamento,
+      status: "CONCLUIDA",
+      observacao: data.observacoes,
+      operadorId: usuarioId,
+    });
+
+    const vendaId = Number(vendaResult.insertId);
+
+    // Criar itens da venda e movimentar estoque
+    for (const item of data.itens) {
+      const produto = await produtoService.getById(item.produtoId);
+      if (!produto) continue;
+
+      const valorTotalItem = item.quantidade * item.precoUnitario;
+      const valorDescontoItem = item.desconto || 0;
+
+      // Criar item da venda
+      await db.insert(itensVenda).values({
+        vendaId,
+        produtoId: item.produtoId,
+        quantidade: item.quantidade,
+        precoUnitario: item.precoUnitario,
+        valorTotal: valorTotalItem,
+        valorDesconto: valorDescontoItem,
+      });
+
+      // Movimentar estoque (saída via VENDA_PDV)
+      const saldoAnterior = produto.estoque;
+      const saldoAtual = saldoAnterior - item.quantidade;
+
+      await db.insert(movimentacoesEstoque).values({
+        produtoId: item.produtoId,
+        tipo: "VENDA_PDV",
+        quantidade: -item.quantidade, // Negativo para saída
+        saldoAnterior,
+        saldoAtual,
+        custoUnitario: item.precoUnitario,
+        documentoReferencia: numeroVenda,
+        usuarioId,
+      });
+
+      // Atualizar estoque do produto
+      await db.update(produtos).set({ estoque: saldoAtual }).where(eq(produtos.id, item.produtoId));
+    }
+
+    // Registrar movimentação de caixa (entrada via ABERTURA)
+    // TODO: Usar tipo correto para entrada de venda quando disponível no enum
+    await db.insert(movimentacoesCaixa).values({
+      tipo: "ABERTURA", // Temporário, ideal seria VENDA ou ENTRADA
+      valor: valorLiquido,
+      dataMovimento: new Date(),
+      operadorId: usuarioId,
+      observacao: `Venda ${numeroVenda}`,
+    });
+
+    return {
+      id: vendaId,
+      numeroVenda,
+      dataVenda: new Date(),
+      valorTotal,
+      valorDesconto,
+      valorLiquido,
+      formaPagamento: data.formaPagamento,
+      status: "CONCLUIDA",
+      observacao: data.observacoes,
+      operadorId: usuarioId,
+    };
+  }
+
+  /**
+   * Busca vendas por período
+   */
+  async getByPeriodo(dataInicio: Date, dataFim: Date): Promise<any[]> {
+    const vendas = await this.list();
+    return vendas.filter((v) => {
+      const dataVenda = new Date(v.dataVenda);
+      return dataVenda >= dataInicio && dataVenda <= dataFim;
+    });
+  }
+
+  /**
+   * Calcula total de vendas do dia
+   */
+  async totalVendasHoje(): Promise<number> {
+    const vendas = await this.list();
+    const hoje = new Date().toDateString();
+
+    return vendas.filter((v) => new Date(v.dataVenda).toDateString() === hoje).reduce((total, v) => total + v.valorLiquido, 0);
+  }
+}
+
+export const vendaService = new VendaService();

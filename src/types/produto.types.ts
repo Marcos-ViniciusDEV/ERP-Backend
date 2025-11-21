@@ -1,0 +1,34 @@
+export interface Produto {
+  id: number;
+  codigo: string;
+  codigoBarras: string | null;
+  descricao: string;
+  marca: string | null;
+  departamentoId: number | null;
+  unidade: string;
+  precoVenda: number;
+  precoVenda2: number | null;
+  precoAtacado: number | null;
+  precoCusto: number;
+  custoMedio: number | null;
+  custoContabil: number | null;
+  custoOperacional: number | null;
+  custoFiscal: number | null;
+  estoque: number;
+  estoqueLoja: number | null;
+  estoqueDeposito: number | null;
+  estoqueTroca: number | null;
+  estoqueMinimo: number;
+  margemLucro: number;
+  margemLucro2: number | null;
+  margemLucro3: number | null;
+  dataUltimaCompra: Date | null;
+  quantidadeUltimaCompra: number | null;
+  dataPrimeiraVenda: Date | null;
+  ativo: boolean;
+  controlaEstoque: boolean;
+  permiteDesconto: boolean;
+  localizacao: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}

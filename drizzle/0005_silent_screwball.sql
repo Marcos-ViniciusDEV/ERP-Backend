@@ -1,0 +1,18 @@
+-- ALTER TABLE `produtos` ADD `precoVenda2` int DEFAULT 0;--> statement-breakpoint
+-- ALTER TABLE `produtos` ADD `precoAtacado` int DEFAULT 0;--> statement-breakpoint
+-- ALTER TABLE `produtos` ADD `custoMedio` int DEFAULT 0;--> statement-breakpoint
+-- ALTER TABLE `produtos` ADD `custoContabil` int DEFAULT 0;--> statement-breakpoint
+-- ALTER TABLE `produtos` ADD `custoOperacional` int DEFAULT 0;--> statement-breakpoint
+-- ALTER TABLE `produtos` ADD `custoFiscal` int DEFAULT 0;--> statement-breakpoint
+-- ALTER TABLE `produtos` ADD `estoqueLoja` int DEFAULT 0;--> statement-breakpoint
+-- ALTER TABLE `produtos` ADD `estoqueDeposito` int DEFAULT 0;--> statement-breakpoint
+-- ALTER TABLE `produtos` ADD `estoqueTroca` int DEFAULT 0;--> statement-breakpoint
+-- ALTER TABLE `produtos` ADD `margemLucro2` int DEFAULT 0;--> statement-breakpoint
+-- ALTER TABLE `produtos` ADD `margemLucro3` int DEFAULT 0;--> statement-breakpoint
+-- ALTER TABLE `produtos` ADD `dataUltimaCompra` timestamp;--> statement-breakpoint
+-- ALTER TABLE `produtos` ADD `quantidadeUltimaCompra` int DEFAULT 0;--> statement-breakpoint
+-- ALTER TABLE `produtos` ADD `dataPrimeiraVenda` timestamp;--> statement-breakpoint
+-- ALTER TABLE `produtos` ADD `ativo` boolean DEFAULT true NOT NULL;--> statement-breakpoint
+-- ALTER TABLE `produtos` ADD `controlaEstoque` boolean DEFAULT true NOT NULL;--> statement-breakpoint
+-- ALTER TABLE `produtos` ADD `permiteDesconto` boolean DEFAULT true NOT NULL;--> statement-breakpoint
+-- ALTER TABLE `produtos` ADD `localizacao` varchar(100);

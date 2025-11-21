@@ -1,0 +1,1 @@
+ALTER TABLE `produtos` ADD `margemLucro` int DEFAULT 30 NOT NULL;
