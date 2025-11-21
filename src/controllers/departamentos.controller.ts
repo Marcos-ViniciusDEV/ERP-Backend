@@ -4,7 +4,7 @@
  */
 
 import { Request, Response } from "express";
-import { getAllDepartamentos, createDepartamento } from "../legacy_db";
+import { departamentoService } from "../services/departamento.service";
 
 export class DepartamentosController {
   /**
@@ -13,7 +13,7 @@ export class DepartamentosController {
    */
   async list(req: Request, res: Response) {
     try {
-      const departamentos = await getAllDepartamentos();
+      const departamentos = await departamentoService.getAll();
       res.json(departamentos);
     } catch (error) {
       res.status(500).json({ error: "Erro ao buscar departamentos" });
@@ -26,7 +26,7 @@ export class DepartamentosController {
    */
   async create(req: Request, res: Response) {
     try {
-      const departamento = await createDepartamento(req.body);
+      const departamento = await departamentoService.create(req.body);
       res.status(201).json(departamento);
     } catch (error) {
       res.status(500).json({ error: "Erro ao criar departamento" });

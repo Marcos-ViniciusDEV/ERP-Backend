@@ -21,6 +21,19 @@ export class KardexController {
     }
   }
 
+
+  /**
+   * Lista todas as movimentações
+   */
+  async listAll(_req: Request, res: Response) {
+    try {
+      const movimentacoes = await kardexService.getAll();
+      res.json(movimentacoes);
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao buscar movimentações" });
+    }
+  }
+
   /**
    * Cria nova movimentação
    */

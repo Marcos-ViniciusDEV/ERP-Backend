@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { authService } from "../services/auth.service";
-import * as db from "../legacy_db";
+
 import type { User } from "../../drizzle/schema";
 
 // Extend Express Request type
@@ -29,10 +29,10 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
   }
 
   try {
-    let user = await db.getUserByOpenId(payload.openId);
+    let user = await authService.getUserByOpenId(payload.openId);
 
     if (!user && payload.email) {
-      user = await db.getUserByEmail(payload.email);
+      user = await authService.getUserByEmail(payload.email);
     }
 
     if (!user) {

@@ -1,4 +1,6 @@
-import * as db from "../legacy_db";
+import { eq, like, or, desc } from "drizzle-orm";
+import { getDb } from "../libs/db";
+import { clientes } from "../../drizzle/schema";
 import fs from "fs";
 import path from "path";
 import { nanoid } from "nanoid";
@@ -40,16 +42,30 @@ const saveImage = (base64Data: string): string => {
 };
 
 export const list = async (search?: string) => {
-  return db.getAllClientes(search);
+  const db = await getDb();
+  if (!db) return [];
+
+  if (search) {
+    return db
+      .select()
+      .from(clientes)
+      .where(or(like(clientes.nome, `%${search}%`), like(clientes.cpfCnpj, `%${search}%`)))
+      .orderBy(desc(clientes.id));
+  }
+
+  return db.select().from(clientes).orderBy(desc(clientes.id));
 };
 
 export const create = async (data: any) => {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   let fotoCaminho = null;
   if (data.foto) {
     fotoCaminho = saveImage(data.foto);
   }
 
-  return db.createCliente({
+  return db.insert(clientes).values({
     nome: data.nome,
     cpfCnpj: data.cpfCnpj,
     email: data.email,
@@ -60,16 +76,24 @@ export const create = async (data: any) => {
 };
 
 export const update = async (id: number, data: any) => {
-  const updateData: any = { ...data, id };
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const updateData: any = { ...data };
   delete updateData.foto;
+  delete updateData.id;
 
   if (data.foto) {
     updateData.fotoCaminho = saveImage(data.foto);
   }
 
-  return db.updateCliente(updateData);
+  await db.update(clientes).set(updateData).where(eq(clientes.id, id));
+  return { success: true };
 };
 
 export const remove = async (id: number) => {
-  return db.deleteCliente(id);
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(clientes).where(eq(clientes.id, id));
+  return { success: true };
 };

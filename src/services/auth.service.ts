@@ -233,6 +233,57 @@ class AuthService {
       token,
     };
   }
+  /**
+   * Busca um usuário pelo openId (OAuth)
+   */
+  async getUserByOpenId(openId: string): Promise<User | undefined> {
+    const db = await getDb();
+    if (!db) return undefined;
+    const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+    return result.length > 0 ? result[0] : undefined;
+  }
+
+  /**
+   * Busca um usuário pelo email
+   */
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const db = await getDb();
+    if (!db) return undefined;
+    const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    return result.length > 0 ? result[0] : undefined;
+  }
+
+  /**
+   * Cria ou atualiza um usuário baseado no openId (upsert)
+   */
+  async upsertUser(user: Partial<User> & { openId: string; email: string }): Promise<void> {
+    const db = await getDb();
+    if (!db) throw new Error("Database not available");
+
+    const values = {
+      openId: user.openId,
+      email: user.email,
+      name: user.name,
+      loginMethod: user.loginMethod,
+      role: user.role || (user.openId === ENV.ownerOpenId ? "admin" : "user"),
+      lastSignedIn: user.lastSignedIn || new Date(),
+    };
+
+    const updateSet: any = {
+      email: user.email,
+      lastSignedIn: user.lastSignedIn || new Date(),
+    };
+
+    if (user.name) updateSet.name = user.name;
+    if (user.loginMethod) updateSet.loginMethod = user.loginMethod;
+    if (user.password) updateSet.password = user.password;
+    if (user.role) updateSet.role = user.role;
+    else if (user.openId === ENV.ownerOpenId) updateSet.role = "admin";
+
+    await db.insert(users).values(values as any).onDuplicateKeyUpdate({
+      set: updateSet,
+    });
+  }
 }
 
 export const authService = new AuthService();

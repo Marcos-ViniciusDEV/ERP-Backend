@@ -6,4 +6,5 @@ export const kardexRouter = Router();
 
 kardexRouter.use(authenticate);
 kardexRouter.get("/produto/:produtoId", kardexController.listByProduto);
+kardexRouter.get("/", kardexController.listAll);
 kardexRouter.post("/", kardexController.create);

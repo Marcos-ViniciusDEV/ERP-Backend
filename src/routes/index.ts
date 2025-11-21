@@ -9,6 +9,8 @@ import { pedidosCompraRouter } from "./pedidos-compra.routes";
 import { contasPagarRouter } from "./contas-pagar.routes";
 import { contasReceberRouter } from "./contas-receber.routes";
 import { kardexRouter } from "./kardex.routes";
+import { caixaRouter } from "./caixa.routes";
+import { inventarioRouter } from "./inventario.routes";
 
 export const appRouter = Router();
 
@@ -22,3 +24,7 @@ appRouter.use("/pedidos-compra", pedidosCompraRouter);
 appRouter.use("/contas-pagar", contasPagarRouter);
 appRouter.use("/contas-receber", contasReceberRouter);
 appRouter.use("/kardex", kardexRouter);
+appRouter.use("/caixa", caixaRouter);
+appRouter.use("/inventario", inventarioRouter);
+
+

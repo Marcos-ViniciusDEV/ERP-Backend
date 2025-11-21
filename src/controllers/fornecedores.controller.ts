@@ -4,7 +4,7 @@
  */
 
 import { Request, Response } from "express";
-import { getAllFornecedores, createFornecedor, updateFornecedor, deleteFornecedor } from "../legacy_db";
+import { fornecedorService } from "../services/fornecedor.service";
 
 export class FornecedoresController {
   /**
@@ -13,7 +13,7 @@ export class FornecedoresController {
    */
   async list(req: Request, res: Response) {
     try {
-      const fornecedores = await getAllFornecedores();
+      const fornecedores = await fornecedorService.getAll();
       res.json(fornecedores);
     } catch (error) {
       res.status(500).json({ error: "Erro ao buscar fornecedores" });
@@ -26,7 +26,7 @@ export class FornecedoresController {
    */
   async create(req: Request, res: Response) {
     try {
-      const fornecedor = await createFornecedor(req.body);
+      const fornecedor = await fornecedorService.create(req.body);
       res.status(201).json(fornecedor);
     } catch (error) {
       res.status(500).json({ error: "Erro ao criar fornecedor" });
@@ -40,7 +40,7 @@ export class FornecedoresController {
   async update(req: Request, res: Response) {
     try {
       const id = parseInt(req.params.id);
-      const fornecedor = await updateFornecedor({ id, ...req.body });
+      const fornecedor = await fornecedorService.update(id, req.body);
       res.json(fornecedor);
     } catch (error) {
       res.status(500).json({ error: "Erro ao atualizar fornecedor" });
@@ -54,7 +54,7 @@ export class FornecedoresController {
   async delete(req: Request, res: Response) {
     try {
       const id = parseInt(req.params.id);
-      await deleteFornecedor(id);
+      await fornecedorService.delete(id);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Erro ao deletar fornecedor" });

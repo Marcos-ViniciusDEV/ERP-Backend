@@ -4,7 +4,7 @@
  */
 
 import { Request, Response } from "express";
-import { getAllContasReceber, createContaReceber } from "../legacy_db";
+import { financeiroService } from "../services/financeiro.service";
 
 export class ContasReceberController {
   /**
@@ -13,7 +13,7 @@ export class ContasReceberController {
    */
   async list(req: Request, res: Response) {
     try {
-      const contas = await getAllContasReceber();
+      const contas = await financeiroService.getAllContasReceber();
       res.json(contas);
     } catch (error) {
       res.status(500).json({ error: "Erro ao buscar contas a receber" });
@@ -26,7 +26,7 @@ export class ContasReceberController {
    */
   async create(req: Request, res: Response) {
     try {
-      const conta = await createContaReceber({
+      const conta = await financeiroService.createContaReceber({
         ...req.body,
         usuarioId: req.user!.id,
       });

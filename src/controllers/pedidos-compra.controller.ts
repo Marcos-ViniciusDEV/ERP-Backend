@@ -4,7 +4,7 @@
  */
 
 import { Request, Response } from "express";
-import { getAllPedidosCompra, createPedidoCompra } from "../legacy_db";
+import { pedidoCompraService } from "../services/pedido-compra.service";
 
 export class PedidosCompraController {
   /**
@@ -13,7 +13,7 @@ export class PedidosCompraController {
    */
   async list(req: Request, res: Response) {
     try {
-      const pedidos = await getAllPedidosCompra();
+      const pedidos = await pedidoCompraService.getAll();
       res.json(pedidos);
     } catch (error) {
       res.status(500).json({ error: "Erro ao buscar pedidos de compra" });
@@ -26,7 +26,7 @@ export class PedidosCompraController {
    */
   async create(req: Request, res: Response) {
     try {
-      const pedido = await createPedidoCompra({
+      const pedido = await pedidoCompraService.create({
         ...req.body,
         usuarioId: req.user!.id,
       });
