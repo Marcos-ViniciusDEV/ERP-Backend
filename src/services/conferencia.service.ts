@@ -329,6 +329,52 @@ export class ConferenciaService {
 
     return { success: true, statusFinal, resumo };
   }
+
+  /**
+   * Resetar conferência de um item (permite recontar)
+   */
+  async resetConferencia(conferenciaId: number) {
+    const db = await getDb();
+    if (!db) throw new Error("Database not available");
+
+    // Resetar status da conferência para PENDENTE
+    await db
+      .update(conferenciasMercadoria)
+      .set({
+        quantidadeConferida: null,
+        divergencia: 0,
+        status: "PENDENTE",
+        dataConferencia: new Date(),
+      })
+      .where(eq(conferenciasMercadoria.id, conferenciaId));
+
+    return { success: true, message: "Conferência resetada com sucesso" };
+  }
+
+  /**
+   * Deletar conferência de um item
+   */
+  async deleteConferencia(conferenciaId: number) {
+    const db = await getDb();
+    if (!db) throw new Error("Database not available");
+
+    // Buscar a conferência antes de deletar
+    const [conferencia] = await db
+      .select()
+      .from(conferenciasMercadoria)
+      .where(eq(conferenciasMercadoria.id, conferenciaId));
+
+    if (!conferencia) {
+      throw new Error("Conferência não encontrada");
+    }
+
+    // Deletar a conferência
+    await db
+      .delete(conferenciasMercadoria)
+      .where(eq(conferenciasMercadoria.id, conferenciaId));
+
+    return { success: true, message: "Conferência removida com sucesso" };
+  }
 }
 
 export const conferenciaService = new ConferenciaService();

@@ -34,4 +34,14 @@ router.get("/codigo-barras/:codigo", (req, res) =>
   conferenciasController.getByCodigoBarras(req, res)
 );
 
+// Resetar conferência de um item
+router.post("/:id/reset", (req, res) =>
+  conferenciasController.reset(req, res)
+);
+
+// Deletar conferência de um item
+router.delete("/:id", (req, res) =>
+  conferenciasController.delete(req, res)
+);
+
 export default router;

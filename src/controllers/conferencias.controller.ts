@@ -165,6 +165,36 @@ export class ConferenciasController {
       res.status(500).json({ error: "Erro ao buscar produto" });
     }
   }
+
+  /**
+   * POST /conferencias/:id/reset
+   * Resetar conferência de um item
+   */
+  async reset(req: Request, res: Response) {
+    try {
+      const conferenciaId = parseInt(req.params.id);
+      const result = await conferenciaService.resetConferencia(conferenciaId);
+      res.json(result);
+    } catch (error) {
+      console.error("[ConferenciasController] Error resetting conferencia:", error);
+      res.status(500).json({ error: "Erro ao resetar conferência" });
+    }
+  }
+
+  /**
+   * DELETE /conferencias/:id
+   * Deletar conferência de um item
+   */
+  async delete(req: Request, res: Response) {
+    try {
+      const conferenciaId = parseInt(req.params.id);
+      const result = await conferenciaService.deleteConferencia(conferenciaId);
+      res.json(result);
+    } catch (error) {
+      console.error("[ConferenciasController] Error deleting conferencia:", error);
+      res.status(500).json({ error: "Erro ao deletar conferência" });
+    }
+  }
 }
 
 export const conferenciasController = new ConferenciasController();

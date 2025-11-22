@@ -113,6 +113,7 @@ export const movimentacoesEstoque = mysqlTable("movimentacoes_estoque", {
   custoUnitario: int("custoUnitario").default(0), // em centavos
   documentoReferencia: varchar("documentoReferencia", { length: 100 }),
   fornecedor: varchar("fornecedor", { length: 255 }),
+  numeroTransacao: varchar("numeroTransacao", { length: 50 }), // Número único para identificar cada transação/importação
   observacao: text("observacao"),
   statusConferencia: mysqlEnum("statusConferencia", [
     "PENDENTE_CONFERENCIA",
