@@ -9,4 +9,5 @@ produtosRouter.get("/", produtoController.list);
 produtosRouter.post("/", produtoController.create);
 produtosRouter.put("/:id", produtoController.update);
 produtosRouter.put("/:id/precos", produtoController.updatePrecos);
+produtosRouter.post("/backfill-last-purchase", produtoController.backfillLastPurchaseData);
 produtosRouter.delete("/:id", produtoController.delete);

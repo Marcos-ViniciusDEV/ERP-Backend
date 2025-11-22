@@ -8,3 +8,5 @@ kardexRouter.use(authenticate);
 kardexRouter.get("/produto/:produtoId", kardexController.listByProduto);
 kardexRouter.get("/", kardexController.listAll);
 kardexRouter.post("/", kardexController.create);
+kardexRouter.delete("/documento/:documento", kardexController.deleteByDocumento);
+kardexRouter.post("/delete-batch", kardexController.deleteBatch);

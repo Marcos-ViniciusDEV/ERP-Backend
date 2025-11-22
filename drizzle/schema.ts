@@ -112,7 +112,14 @@ export const movimentacoesEstoque = mysqlTable("movimentacoes_estoque", {
   saldoAtual: int("saldoAtual").notNull(),
   custoUnitario: int("custoUnitario").default(0), // em centavos
   documentoReferencia: varchar("documentoReferencia", { length: 100 }),
+  fornecedor: varchar("fornecedor", { length: 255 }),
   observacao: text("observacao"),
+  statusConferencia: mysqlEnum("statusConferencia", [
+    "PENDENTE_CONFERENCIA",
+    "EM_CONFERENCIA",
+    "CONFERIDO",
+    "CONFERIDO_COM_DIVERGENCIA",
+  ]),
   usuarioId: int("usuarioId").references(() => users.id),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
@@ -360,3 +367,36 @@ export const clientes = mysqlTable("clientes", {
 
 export type Cliente = typeof clientes.$inferSelect;
 export type InsertCliente = typeof clientes.$inferInsert;
+
+/**
+ * Conferências de Mercadoria (Verificação de Entrada de NFe).
+ */
+export const conferenciasMercadoria = mysqlTable("conferencias_mercadoria", {
+  id: int("id").autoincrement().primaryKey(),
+  movimentacaoEstoqueId: int("movimentacaoEstoqueId")
+    .notNull()
+    .references(() => movimentacoesEstoque.id),
+  produtoId: int("produtoId")
+    .notNull()
+    .references(() => produtos.id),
+  quantidadeEsperada: int("quantidadeEsperada").notNull(),
+  quantidadeConferida: int("quantidadeConferida"),
+  divergencia: int("divergencia").default(0), // conferida - esperada
+  tipoDivergencia: mysqlEnum("tipoDivergencia", ["FALTA", "SOBRA", "OK"]),
+  dataValidade: timestamp("dataValidade"),
+  dataChegada: timestamp("dataChegada"),
+  dataConferencia: timestamp("dataConferencia").defaultNow().notNull(),
+  codigoBarrasLido: varchar("codigoBarrasLido", { length: 50 }),
+  status: mysqlEnum("status", ["PENDENTE", "CONFERIDO", "DIVERGENCIA"])
+    .default("PENDENTE")
+    .notNull(),
+  observacao: text("observacao"),
+  usuarioId: int("usuarioId")
+    .notNull()
+    .references(() => users.id),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ConferenciaMercadoria = typeof conferenciasMercadoria.$inferSelect;
+export type InsertConferenciaMercadoria = typeof conferenciasMercadoria.$inferInsert;

@@ -1,0 +1,1 @@
+ALTER TABLE `conferencias_mercadoria` ADD `dataChegada` timestamp;

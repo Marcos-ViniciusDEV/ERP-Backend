@@ -1,0 +1,1 @@
+ALTER TABLE `movimentacoes_estoque` ADD `fornecedor` varchar(255);

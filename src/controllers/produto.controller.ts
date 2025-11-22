@@ -115,6 +115,19 @@ export class ProdutoController {
       res.status(500).json({ error: "Erro ao buscar produtos com estoque baixo" });
     }
   }
+
+  /**
+   * POST /produtos/backfill-last-purchase
+   * Preenche dados da última compra
+   */
+  async backfillLastPurchaseData(_req: Request, res: Response) {
+    try {
+      const result = await produtoService.backfillLastPurchaseData();
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao preencher dados da última compra" });
+    }
+  }
 }
 
 export const produtoController = new ProdutoController();

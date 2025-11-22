@@ -1,3 +1,4 @@
+
 /**
  * @module KardexController
  * @description Controller para endpoints de Kardex (Movimentação de Estoque)
@@ -45,6 +46,32 @@ export class KardexController {
       res.status(201).json(movimentacao);
     } catch (error) {
       res.status(500).json({ error: "Erro ao criar movimentação" });
+    }
+  }
+
+  /**
+   * Remove movimentações por documento
+   */
+  async deleteByDocumento(req: Request, res: Response) {
+    try {
+      const { documento } = req.params;
+      await kardexService.deleteByDocumento(documento);
+      return res.status(200).json({ message: "Movimentações deletadas com sucesso" });
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
+    }
+  }
+
+  async deleteBatch(req: Request, res: Response) {
+    try {
+      const { ids } = req.body;
+      if (!ids || !Array.isArray(ids)) {
+        return res.status(400).json({ message: "IDs inválidos" });
+      }
+      await kardexService.deleteBatch(ids);
+      return res.status(200).json({ message: "Movimentações deletadas com sucesso" });
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
     }
   }
 }

@@ -9,7 +9,7 @@
  * - Orquestração de operações complexas
  */
 
-import { eq } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { getDb } from "../libs/db";
 import { produtos, movimentacoesEstoque } from "../../drizzle/schema";
 import type { CreateProdutoInput, UpdateProdutoInput } from "../models/produto.model";
@@ -135,6 +135,45 @@ export class ProdutoService {
   async produtosEstoqueBaixo(): Promise<Produto[]> {
     const produtos = await this.list();
     return produtos.filter((p) => p.estoque <= p.estoqueMinimo);
+  }
+
+  /**
+   * Preenche dados da última compra baseado no histórico do Kardex
+   */
+  async backfillLastPurchaseData() {
+    const db = await getDb();
+    if (!db) throw new Error("Database not available");
+
+    const allProdutos = await this.list();
+    let updatedCount = 0;
+
+    for (const produto of allProdutos) {
+      const lastEntry = await db
+        .select()
+        .from(movimentacoesEstoque)
+        .where(
+          and(
+            eq(movimentacoesEstoque.produtoId, produto.id),
+            eq(movimentacoesEstoque.tipo, "ENTRADA_NFE")
+          )
+        )
+        .orderBy(desc(movimentacoesEstoque.createdAt))
+        .limit(1);
+
+      if (lastEntry.length > 0) {
+        const entry = lastEntry[0];
+        await db
+          .update(produtos)
+          .set({
+            dataUltimaCompra: entry.createdAt,
+            quantidadeUltimaCompra: entry.quantidade,
+          })
+          .where(eq(produtos.id, produto.id));
+        updatedCount++;
+      }
+    }
+
+    return { success: true, updated: updatedCount, total: allProdutos.length };
   }
 }
 
