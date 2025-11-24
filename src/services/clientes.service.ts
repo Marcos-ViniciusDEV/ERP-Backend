@@ -75,6 +75,17 @@ export const create = async (data: any) => {
   });
 };
 
+const deleteImage = (relativePath: string) => {
+  try {
+    const filepath = path.join(process.cwd(), relativePath);
+    if (fs.existsSync(filepath)) {
+      fs.unlinkSync(filepath);
+    }
+  } catch (error) {
+    console.error("Error deleting image:", error);
+  }
+};
+
 export const update = async (id: number, data: any) => {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -84,6 +95,13 @@ export const update = async (id: number, data: any) => {
   delete updateData.id;
 
   if (data.foto) {
+    // Fetch existing client to get old photo path
+    const [existingClient] = await db.select().from(clientes).where(eq(clientes.id, id));
+    
+    if (existingClient?.fotoCaminho) {
+      deleteImage(existingClient.fotoCaminho);
+    }
+
     updateData.fotoCaminho = saveImage(data.foto);
   }
 
@@ -94,6 +112,14 @@ export const update = async (id: number, data: any) => {
 export const remove = async (id: number) => {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  // Fetch existing client to get photo path
+  const [existingClient] = await db.select().from(clientes).where(eq(clientes.id, id));
+
+  if (existingClient?.fotoCaminho) {
+    deleteImage(existingClient.fotoCaminho);
+  }
+
   await db.delete(clientes).where(eq(clientes.id, id));
   return { success: true };
 };

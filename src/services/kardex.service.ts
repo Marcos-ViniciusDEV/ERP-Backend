@@ -1,13 +1,34 @@
 import { eq, desc, inArray } from "drizzle-orm";
 import { getDb } from "../libs/db";
-import { movimentacoesEstoque, produtos } from "../../drizzle/schema";
+import { movimentacoesEstoque, produtos, users } from "../../drizzle/schema";
 import { CreateKardexInput } from "../models/kardex.model";
 
 export class KardexService {
   async listByProduto(produtoId: number) {
     const db = await getDb();
     if (!db) return [];
-    return db.select().from(movimentacoesEstoque).where(eq(movimentacoesEstoque.produtoId, produtoId));
+    return db
+      .select({
+        id: movimentacoesEstoque.id,
+        produtoId: movimentacoesEstoque.produtoId,
+        tipo: movimentacoesEstoque.tipo,
+        quantidade: movimentacoesEstoque.quantidade,
+        saldoAnterior: movimentacoesEstoque.saldoAnterior,
+        saldoAtual: movimentacoesEstoque.saldoAtual,
+        custoUnitario: movimentacoesEstoque.custoUnitario,
+        documentoReferencia: movimentacoesEstoque.documentoReferencia,
+        fornecedor: movimentacoesEstoque.fornecedor,
+        numeroTransacao: movimentacoesEstoque.numeroTransacao,
+        observacao: movimentacoesEstoque.observacao,
+        statusConferencia: movimentacoesEstoque.statusConferencia,
+        usuarioId: movimentacoesEstoque.usuarioId,
+        createdAt: movimentacoesEstoque.createdAt,
+        usuarioNome: users.name,
+      })
+      .from(movimentacoesEstoque)
+      .leftJoin(users, eq(movimentacoesEstoque.usuarioId, users.id))
+      .where(eq(movimentacoesEstoque.produtoId, produtoId))
+      .orderBy(desc(movimentacoesEstoque.createdAt));
   }
 
   async getAll() {

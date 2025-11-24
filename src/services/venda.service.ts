@@ -9,7 +9,7 @@
  * - Geração de movimentações financeiras
  */
 
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { getDb } from "../libs/db";
 import { vendas, itensVenda, movimentacoesEstoque, movimentacoesCaixa, produtos } from "../../drizzle/schema";
 import type { CreateVendaInput } from "../models/venda.model";
@@ -17,12 +17,41 @@ import { produtoService } from "./produto.service";
 
 export class VendaService {
   /**
-   * Lista todas as vendas
+   * Lista todas as vendas com seus itens
    */
   async list(): Promise<any[]> {
     const db = await getDb();
     if (!db) return [];
-    return db.select().from(vendas);
+    
+    // Buscar todas as vendas
+    const allVendas = await db.select().from(vendas).orderBy(desc(vendas.dataVenda));
+    
+    // Para cada venda, buscar seus itens com detalhes do produto
+    const vendasComItens = await Promise.all(
+      allVendas.map(async (venda) => {
+        const itens = await db
+          .select({
+            id: itensVenda.id,
+            vendaId: itensVenda.vendaId,
+            produtoId: itensVenda.produtoId,
+            produtoNome: produtos.descricao,
+            quantidade: itensVenda.quantidade,
+            precoUnitario: itensVenda.precoUnitario,
+            total: itensVenda.valorTotal,
+            desconto: itensVenda.valorDesconto,
+          })
+          .from(itensVenda)
+          .leftJoin(produtos, eq(itensVenda.produtoId, produtos.id))
+          .where(eq(itensVenda.vendaId, venda.id));
+        
+        return {
+          ...venda,
+          itens,
+        };
+      })
+    );
+    
+    return vendasComItens;
   }
 
   /**
@@ -154,6 +183,27 @@ export class VendaService {
     const hoje = new Date().toDateString();
 
     return vendas.filter((v) => new Date(v.dataVenda).toDateString() === hoje).reduce((total, v) => total + v.valorLiquido, 0);
+  }
+  /**
+   * Busca vendas por produto
+   */
+  async getByProduto(produtoId: number): Promise<any[]> {
+    const db = await getDb();
+    if (!db) return [];
+
+    return db
+      .select({
+        id: vendas.id,
+        numeroVenda: vendas.numeroVenda,
+        dataVenda: vendas.dataVenda,
+        quantidade: itensVenda.quantidade,
+        precoUnitario: itensVenda.precoUnitario,
+        valorTotal: itensVenda.valorTotal,
+      })
+      .from(itensVenda)
+      .innerJoin(vendas, eq(itensVenda.vendaId, vendas.id))
+      .where(eq(itensVenda.produtoId, produtoId))
+      .orderBy(desc(vendas.dataVenda));
   }
 }
 

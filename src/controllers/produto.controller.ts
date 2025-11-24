@@ -11,6 +11,8 @@
 
 import { Request, Response } from "express";
 import { produtoService } from "../services/produto.service";
+import { kardexService } from "../services/kardex.service";
+import { vendaService } from "../services/venda.service";
 import type { CreateProdutoInput, UpdateProdutoInput } from "../models/produto.model";
 
 export class ProdutoController {
@@ -22,8 +24,9 @@ export class ProdutoController {
     try {
       const produtos = await produtoService.list();
       res.json(produtos);
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao buscar produtos" });
+    } catch (error: any) {
+      console.error("Error in ProdutoController.list:", error);
+      res.status(500).json({ error: "Erro ao buscar produtos", details: error.message });
     }
   }
 
@@ -69,8 +72,9 @@ export class ProdutoController {
       const data: UpdateProdutoInput = { id, ...req.body };
       await produtoService.update(data);
       res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao atualizar produto" });
+    } catch (error: any) {
+      console.error("Error in ProdutoController.update:", error);
+      res.status(400).json({ error: error.message || "Erro ao atualizar produto" });
     }
   }
 
@@ -83,8 +87,9 @@ export class ProdutoController {
       const id = parseInt(req.params.id);
       await produtoService.delete(id);
       res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao deletar produto" });
+    } catch (error: any) {
+      console.error("Error in ProdutoController.delete:", error);
+      res.status(400).json({ error: error.message || "Erro ao deletar produto" });
     }
   }
 
@@ -126,6 +131,34 @@ export class ProdutoController {
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: "Erro ao preencher dados da última compra" });
+    }
+  }
+
+  /**
+   * GET /produtos/:id/movimentos
+   * Lista movimentações de estoque do produto
+   */
+  async getMovimentos(req: Request, res: Response) {
+    try {
+      const id = parseInt(req.params.id);
+      const result = await kardexService.listByProduto(id);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  /**
+   * GET /produtos/:id/historico-vendas
+   * Lista histórico de vendas do produto
+   */
+  async getHistoricoVendas(req: Request, res: Response) {
+    try {
+      const id = parseInt(req.params.id);
+      const result = await vendaService.getByProduto(id);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   }
 }

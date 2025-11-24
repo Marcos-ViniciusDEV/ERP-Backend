@@ -49,6 +49,12 @@ export class ProdutoService {
       precoVenda = data.precoCusto * (1 + data.margemLucro / 100);
     }
 
+    // Verificar código duplicado
+    const existing = await db.select().from(produtos).where(eq(produtos.codigo, data.codigo)).limit(1);
+    if (existing.length > 0) {
+      throw new Error(`Já existe um produto com o código ${data.codigo}`);
+    }
+
     const [result] = await db.insert(produtos).values({
       ...data,
       precoVenda: precoVenda || data.precoCusto,
@@ -69,13 +75,31 @@ export class ProdutoService {
       throw new Error(`Produto ${data.id} não encontrado`);
     }
 
+    // Verificar código duplicado
+    if (data.codigo && data.codigo !== produto.codigo) {
+      const existing = await db.select().from(produtos).where(eq(produtos.codigo, data.codigo)).limit(1);
+      if (existing.length > 0) {
+        throw new Error(`Já existe um produto com o código ${data.codigo}`);
+      }
+    }
+
     const { id, ...updateData } = data;
-    await db.update(produtos).set(updateData).where(eq(produtos.id, id));
+
+    // Converte datas para objetos Date se forem strings
+    const payload: any = { ...updateData };
+    if (payload.dataUltimaCompra && typeof payload.dataUltimaCompra === 'string') {
+      payload.dataUltimaCompra = new Date(payload.dataUltimaCompra);
+    }
+    if (payload.dataPrimeiraVenda && typeof payload.dataPrimeiraVenda === 'string') {
+      payload.dataPrimeiraVenda = new Date(payload.dataPrimeiraVenda);
+    }
+
+    await db.update(produtos).set(payload).where(eq(produtos.id, id));
   }
 
   /**
    * Deleta produto
-   * Valida se não tem movimentações antes de deletar
+   * Remove movimentações antes de deletar (Cascade)
    */
   async delete(id: number): Promise<void> {
     const db = await getDb();
@@ -86,12 +110,8 @@ export class ProdutoService {
       throw new Error(`Produto ${id} não encontrado`);
     }
 
-    // Verificar se o produto tem movimentações no Kardex
-    const movimentacoes = await db.select().from(movimentacoesEstoque).where(eq(movimentacoesEstoque.produtoId, id)).limit(1);
-
-    if (movimentacoes.length > 0) {
-      throw new Error("Não é possível excluir este produto pois ele possui movimentações de estoque registradas.");
-    }
+    // Deletar movimentações do estoque antes de excluir o produto
+    await db.delete(movimentacoesEstoque).where(eq(movimentacoesEstoque.produtoId, id));
 
     await db.delete(produtos).where(eq(produtos.id, id));
   }

@@ -11,3 +11,5 @@ produtosRouter.put("/:id", produtoController.update);
 produtosRouter.put("/:id/precos", produtoController.updatePrecos);
 produtosRouter.post("/backfill-last-purchase", produtoController.backfillLastPurchaseData);
 produtosRouter.delete("/:id", produtoController.delete);
+produtosRouter.get("/:id/movimentos", produtoController.getMovimentos);
+produtosRouter.get("/:id/historico-vendas", produtoController.getHistoricoVendas);

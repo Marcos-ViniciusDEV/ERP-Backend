@@ -180,7 +180,11 @@ export type InsertInventarioItem = typeof inventariosItens.$inferInsert;
  */
 export const vendas = mysqlTable("vendas", {
   id: int("id").autoincrement().primaryKey(),
+  uuid: varchar("uuid", { length: 36 }).notNull().unique(), // Added UUID
   numeroVenda: varchar("numeroVenda", { length: 50 }).notNull().unique(),
+  ccf: varchar("ccf", { length: 6 }), // Added CCF
+  coo: varchar("coo", { length: 6 }), // Added COO
+  pdvId: varchar("pdvId", { length: 50 }), // Added PDV ID
   dataVenda: timestamp("dataVenda").defaultNow().notNull(),
   valorTotal: int("valorTotal").notNull().default(0), // em centavos
   valorDesconto: int("valorDesconto").notNull().default(0), // em centavos
@@ -192,6 +196,7 @@ export const vendas = mysqlTable("vendas", {
   nfceNumero: varchar("nfceNumero", { length: 50 }),
   nfceChave: varchar("nfceChave", { length: 100 }),
   operadorId: int("operadorId").references(() => users.id),
+  operadorNome: varchar("operadorNome", { length: 255 }), // Added Operator Name
   observacao: text("observacao"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
@@ -230,6 +235,7 @@ export const movimentacoesCaixa = mysqlTable("movimentacoes_caixa", {
     "REFORCO",
     "ABERTURA",
     "FECHAMENTO",
+    "VENDA",
   ]).notNull(),
   valor: int("valor").notNull(), // em centavos
   dataMovimento: timestamp("dataMovimento").defaultNow().notNull(),

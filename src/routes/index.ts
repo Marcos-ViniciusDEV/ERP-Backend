@@ -12,6 +12,7 @@ import { kardexRouter } from "./kardex.routes";
 import { caixaRouter } from "./caixa.routes";
 import { inventarioRouter } from "./inventario.routes";
 import conferenciaRouter from "./conferencias.routes";
+import { pdvRouter } from "./pdv.routes";
 
 export const appRouter = Router();
 
@@ -28,5 +29,6 @@ appRouter.use("/kardex", kardexRouter);
 appRouter.use("/caixa", caixaRouter);
 appRouter.use("/inventario", inventarioRouter);
 appRouter.use("/conferencias", conferenciaRouter);
+appRouter.use("/pdv", pdvRouter);
 
 
