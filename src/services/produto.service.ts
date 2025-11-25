@@ -55,9 +55,12 @@ export class ProdutoService {
       throw new Error(`Já existe um produto com o código ${data.codigo}`);
     }
 
+    const finalPrecoVenda = precoVenda || data.precoCusto;
+
     const [result] = await db.insert(produtos).values({
       ...data,
-      precoVenda: precoVenda || data.precoCusto,
+      precoVenda: finalPrecoVenda,
+      precoPdv: finalPrecoVenda,
     });
 
     return this.getById(Number(result.insertId));

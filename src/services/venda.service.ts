@@ -14,6 +14,7 @@ import { getDb } from "../libs/db";
 import { vendas, itensVenda, movimentacoesEstoque, movimentacoesCaixa, produtos } from "../../drizzle/schema";
 import type { CreateVendaInput } from "../models/venda.model";
 import { produtoService } from "./produto.service";
+import { randomUUID } from "crypto";
 
 export class VendaService {
   /**
@@ -90,6 +91,7 @@ export class VendaService {
 
     // Criar venda
     const [vendaResult] = await db.insert(vendas).values({
+      uuid: randomUUID(),
       numeroVenda,
       dataVenda: new Date(),
       valorTotal,

@@ -7,7 +7,7 @@ import {
   movimentacoesCaixa,
   movimentacoesEstoque,
 } from "../../drizzle/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import type { VendaPDV, MovimentoCaixaPDV } from "../zod/pdv.schema";
 
 /**
@@ -20,6 +20,11 @@ export const pdvService = {
   async getCargaInicial() {
     const db = await getDb();
     if (!db) throw new Error("Database not available");
+
+    // Atualizar precoPdv para igualar ao precoVenda, pois estamos enviando a carga agora
+    // Isso confirma que o PDV recebeu (ou está recebendo) os novos preços
+    await db.execute(sql`UPDATE produtos SET precoPdv = precoVenda WHERE ativo = 1`);
+
 
     // Buscar produtos ativos
     const produtosAtivos = await db

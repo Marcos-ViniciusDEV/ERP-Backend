@@ -59,6 +59,7 @@ export const produtos = mysqlTable("produtos", {
   departamentoId: int("departamentoId"),
   unidade: varchar("unidade", { length: 10 }).notNull(),
   precoVenda: int("precoVenda").notNull(),
+  precoPdv: int("precoPdv").default(0),
   precoVenda2: int("precoVenda2").default(0),
   precoAtacado: int("precoAtacado").default(0),
   precoCusto: int("precoCusto").notNull(),

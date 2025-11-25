@@ -100,7 +100,7 @@ export const pdvController = {
     try {
       const { pdvIds } = req.body; // Array de IDs ou undefined para todos
 
-      // Buscar carga inicial
+      // Buscar carga inicial (isso também atualiza os preços PDV no banco)
       const dados = await pdvService.getCargaInicial();
 
       let sent = 0;
