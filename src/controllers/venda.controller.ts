@@ -43,12 +43,13 @@ export class VendaController {
   async getByPeriodo(req: Request, res: Response) {
     try {
       const { dataInicio, dataFim } = req.query;
-      const inicio = new Date(dataInicio as string);
-      const fim = new Date(dataFim as string);
+      
+      console.log("[VendaController] Searching period:", { dataInicio, dataFim });
 
-      const vendas = await vendaService.getByPeriodo(inicio, fim);
+      const vendas = await vendaService.getByPeriodo(dataInicio as string, dataFim as string);
       res.json(vendas);
     } catch (error) {
+      console.error("[VendaController] Error searching sales:", error);
       res.status(500).json({ error: "Erro ao buscar vendas por período" });
     }
   }

@@ -9,7 +9,7 @@
  * - Geração de movimentações financeiras
  */
 
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 import { getDb } from "../libs/db";
 import { vendas, itensVenda, movimentacoesEstoque, movimentacoesCaixa, produtos } from "../../drizzle/schema";
 import type { CreateVendaInput } from "../models/venda.model";
@@ -169,12 +169,59 @@ export class VendaService {
   /**
    * Busca vendas por período
    */
-  async getByPeriodo(dataInicio: Date, dataFim: Date): Promise<any[]> {
-    const vendas = await this.list();
-    return vendas.filter((v) => {
-      const dataVenda = new Date(v.dataVenda);
-      return dataVenda >= dataInicio && dataVenda <= dataFim;
-    });
+  async getByPeriodo(dataInicio: string, dataFim: string): Promise<any[]> {
+    const db = await getDb();
+    if (!db) return [];
+
+    // Buscar vendas no período usando comparação de timestamp string
+    // Isso evita problemas de timezone e conversão de data
+    
+    // Se dataInicio não for fornecida, usar data muito antiga
+    const startStr = dataInicio ? dataInicio : '1970-01-01';
+    // Se dataFim não for fornecida, usar data muito futura (ou hoje 23:59:59)
+    const endStr = dataFim ? dataFim : '2100-12-31';
+
+    // Buscar vendas no período usando comparação direta de string SQL
+    // Isso evita problemas de timezone do driver/ORM
+    const start = `${startStr} 00:00:00`;
+    const end = `${endStr} 23:59:59`;
+
+    console.log("[VendaService] Searching between:", { start, end });
+
+    const vendasFiltradas = await db
+      .select()
+      .from(vendas)
+      .where(
+        sql`${vendas.dataVenda} >= ${start} AND ${vendas.dataVenda} <= ${end}`
+      )
+      .orderBy(desc(vendas.dataVenda));
+
+    // Para cada venda, buscar seus itens com detalhes do produto
+    const vendasComItens = await Promise.all(
+      vendasFiltradas.map(async (venda) => {
+        const itens = await db
+          .select({
+            id: itensVenda.id,
+            vendaId: itensVenda.vendaId,
+            produtoId: itensVenda.produtoId,
+            produtoNome: produtos.descricao,
+            quantidade: itensVenda.quantidade,
+            precoUnitario: itensVenda.precoUnitario,
+            total: itensVenda.valorTotal,
+            desconto: itensVenda.valorDesconto,
+          })
+          .from(itensVenda)
+          .leftJoin(produtos, eq(itensVenda.produtoId, produtos.id))
+          .where(eq(itensVenda.vendaId, venda.id));
+
+        return {
+          ...venda,
+          itens,
+        };
+      })
+    );
+
+    return vendasComItens;
   }
 
   /**

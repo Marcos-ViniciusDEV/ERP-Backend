@@ -1,6 +1,8 @@
 import express from "express";
 import cors from "cors";
+import swaggerUi from "swagger-ui-express";
 import { appRouter } from "./routes";
+import { swaggerSpec } from "./swagger";
 
 export const app = express();
 
@@ -14,6 +16,9 @@ app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
 });
+
+// Swagger UI
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // Static files
 app.use("/uploads", express.static("uploads"));
