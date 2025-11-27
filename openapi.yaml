@@ -1,0 +1,993 @@
+openapi: 3.0.0
+
+info:
+  title: PDV Backend API
+  version: 1.0.0
+  description: Complete API documentation for the PDV (Point of Sale) system backend
+  contact:
+    name: API Support
+    email: support@example.com
+
+servers:
+  - url: http://localhost:3000
+    description: Development server
+  - url: https://api.production.com
+    description: Production server
+
+tags:
+  - name: Auth
+    description: Authentication endpoints
+  - name: Produtos
+    description: Product management endpoints
+  - name: Clientes
+    description: Customer management endpoints
+  - name: Fornecedores
+    description: Supplier management endpoints
+  - name: Vendas
+    description: Sales management endpoints
+  - name: Caixa
+    description: Cash register management endpoints
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token for authentication
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Error message
+      example:
+        message: "An error occurred"
+
+    Success:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Success message
+      example:
+        message: "Operation completed successfully"
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        email:
+          type: string
+          format: email
+          example: "user@example.com"
+        name:
+          type: string
+          example: "John Doe"
+        role:
+          type: string
+          example: "admin"
+
+    Cliente:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        nome:
+          type: string
+          example: "João Silva"
+        email:
+          type: string
+          format: email
+          example: "joao@example.com"
+        telefone:
+          type: string
+          example: "(11) 98765-4321"
+        cpf:
+          type: string
+          example: "123.456.789-00"
+        endereco:
+          type: string
+          example: "Rua Example, 123"
+
+    Fornecedor:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        nome:
+          type: string
+          example: "Fornecedor ABC"
+        cnpj:
+          type: string
+          example: "12.345.678/0001-90"
+        email:
+          type: string
+          format: email
+          example: "contato@fornecedor.com"
+        telefone:
+          type: string
+          example: "(11) 3456-7890"
+        endereco:
+          type: string
+          example: "Av. Comercial, 456"
+
+    Produto:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        nome:
+          type: string
+          example: "Produto Exemplo"
+        codigoBarras:
+          type: string
+          example: "7891234567890"
+        precoVenda:
+          type: number
+          format: float
+          example: 19.99
+        precoCusto:
+          type: number
+          format: float
+          example: 10.50
+        estoqueAtual:
+          type: number
+          example: 100
+        estoqueMinimo:
+          type: number
+          example: 10
+        unidade:
+          type: string
+          example: "UN"
+        categoriaId:
+          type: integer
+          example: 1
+        fornecedorId:
+          type: integer
+          example: 1
+
+    VendaItem:
+      type: object
+      properties:
+        produtoId:
+          type: integer
+          example: 1
+        quantidade:
+          type: number
+          example: 2
+        precoUnitario:
+          type: number
+          format: float
+          example: 19.99
+
+    Venda:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        clienteId:
+          type: integer
+          example: 1
+        usuarioId:
+          type: integer
+          example: 1
+        total:
+          type: number
+          format: float
+          example: 39.98
+        desconto:
+          type: number
+          format: float
+          example: 0.00
+        formaPagamento:
+          type: string
+          example: "DINHEIRO"
+        dataVenda:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:00Z"
+        itens:
+          type: array
+          items:
+            $ref: '#/components/schemas/VendaItem'
+
+    MovimentoCaixa:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        tipo:
+          type: string
+          enum: [ENTRADA, SAIDA]
+          example: "ENTRADA"
+        valor:
+          type: number
+          format: float
+          example: 100.00
+        descricao:
+          type: string
+          example: "Abertura de caixa"
+        data:
+          type: string
+          format: date-time
+          example: "2024-01-15T08:00:00Z"
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ==================== AUTH ENDPOINTS ====================
+  /auth/login:
+    post:
+      summary: Login to the application
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: "admin@example.com"
+                password:
+                  type: string
+                  example: "password123"
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  token:
+                    type: string
+                    example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  user:
+                    $ref: '#/components/schemas/User'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/register:
+    post:
+      summary: Register a new user
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - name
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: "newuser@example.com"
+                name:
+                  type: string
+                  example: "New User"
+                password:
+                  type: string
+                  example: "securepassword"
+      responses:
+        '200':
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  token:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/User'
+        '400':
+          description: Validation error or registration failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/me:
+    get:
+      summary: Get current user profile
+      tags: [Auth]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ==================== PRODUTOS ENDPOINTS ====================
+  /produtos:
+    get:
+      summary: List all products
+      tags: [Produtos]
+      responses:
+        '200':
+          description: List of products
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Produto'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      summary: Create a new product
+      tags: [Produtos]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Produto'
+      responses:
+        '201':
+          description: Product created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Produto'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /produtos/{id}:
+    get:
+      summary: Get product by ID
+      tags: [Produtos]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: Product ID
+      responses:
+        '200':
+          description: Product details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Produto'
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    put:
+      summary: Update product
+      tags: [Produtos]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: Product ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Produto'
+      responses:
+        '200':
+          description: Product updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Produto'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      summary: Delete product
+      tags: [Produtos]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: Product ID
+      responses:
+        '200':
+          description: Product deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Success'
+        '400':
+          description: Error deleting product
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /produtos/{id}/precos:
+    put:
+      summary: Update product prices
+      tags: [Produtos]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: Product ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                precoCusto:
+                  type: number
+                  format: float
+                  example: 12.50
+      responses:
+        '200':
+          description: Prices updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Success'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /produtos/estoque-baixo:
+    get:
+      summary: List products with low stock
+      tags: [Produtos]
+      responses:
+        '200':
+          description: List of low stock products
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Produto'
+
+  /produtos/backfill-last-purchase:
+    post:
+      summary: Backfill last purchase data
+      tags: [Produtos]
+      responses:
+        '200':
+          description: Backfill successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Success'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /produtos/{id}/movimentos:
+    get:
+      summary: Get product stock movements
+      tags: [Produtos]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: Product ID
+      responses:
+        '200':
+          description: List of movements
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /produtos/{id}/historico-vendas:
+    get:
+      summary: Get product sales history
+      tags: [Produtos]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: Product ID
+      responses:
+        '200':
+          description: Sales history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ==================== CLIENTES ENDPOINTS ====================
+  /clientes:
+    get:
+      summary: List all customers
+      tags: [Clientes]
+      parameters:
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Search term
+      responses:
+        '200':
+          description: List of customers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Cliente'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      summary: Create a new customer
+      tags: [Clientes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Cliente'
+      responses:
+        '200':
+          description: Customer created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cliente'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /clientes/{id}:
+    put:
+      summary: Update customer
+      tags: [Clientes]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: Customer ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Cliente'
+      responses:
+        '200':
+          description: Customer updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cliente'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      summary: Delete customer
+      tags: [Clientes]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: Customer ID
+      responses:
+        '200':
+          description: Customer deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Success'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ==================== FORNECEDORES ENDPOINTS ====================
+  /fornecedores:
+    get:
+      summary: List all suppliers
+      tags: [Fornecedores]
+      responses:
+        '200':
+          description: List of suppliers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Fornecedor'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      summary: Create a new supplier
+      tags: [Fornecedores]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Fornecedor'
+      responses:
+        '201':
+          description: Supplier created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Fornecedor'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /fornecedores/{id}:
+    put:
+      summary: Update supplier
+      tags: [Fornecedores]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: Supplier ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Fornecedor'
+      responses:
+        '200':
+          description: Supplier updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Fornecedor'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      summary: Delete supplier
+      tags: [Fornecedores]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: Supplier ID
+      responses:
+        '200':
+          description: Supplier deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Success'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ==================== VENDAS ENDPOINTS ====================
+  /vendas:
+    get:
+      summary: List all sales
+      tags: [Vendas]
+      responses:
+        '200':
+          description: List of sales
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Venda'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      summary: Create a new sale
+      tags: [Vendas]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Venda'
+      responses:
+        '201':
+          description: Sale created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Venda'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /vendas/periodo:
+    get:
+      summary: Get sales by period
+      tags: [Vendas]
+      parameters:
+        - in: query
+          name: dataInicio
+          required: true
+          schema:
+            type: string
+            format: date
+          description: Start date
+          example: "2024-01-01"
+        - in: query
+          name: dataFim
+          required: true
+          schema:
+            type: string
+            format: date
+          description: End date
+          example: "2024-01-31"
+      responses:
+        '200':
+          description: List of sales in period
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Venda'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /vendas/hoje:
+    get:
+      summary: Get total sales for today
+      tags: [Vendas]
+      responses:
+        '200':
+          description: Total sales
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: number
+                    format: float
+                    example: 1234.56
+                  quantidade:
+                    type: integer
+                    example: 15
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ==================== CAIXA ENDPOINTS ====================
+  /caixa:
+    get:
+      summary: List all cash register movements
+      tags: [Caixa]
+      responses:
+        '200':
+          description: List of movements
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MovimentoCaixa'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      summary: Create a new cash register movement
+      tags: [Caixa]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tipo
+                - valor
+                - descricao
+              properties:
+                tipo:
+                  type: string
+                  enum: [ENTRADA, SAIDA]
+                  example: "ENTRADA"
+                valor:
+                  type: number
+                  format: float
+                  example: 100.00
+                descricao:
+                  type: string
+                  example: "Abertura de caixa"
+      responses:
+        '201':
+          description: Movement created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovimentoCaixa'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
