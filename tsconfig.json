@@ -18,7 +18,8 @@
     "paths": {
       "@/*": ["./src/*"],
       "@shared/*": ["./src/shared/*"]
-    }
+    },
+    "esModuleInterop": true
   },
-  "include": ["src"]
+  "include": ["src", "tests", "drizzle"]
 }
