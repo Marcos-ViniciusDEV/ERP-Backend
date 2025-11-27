@@ -222,4 +222,5 @@ npm run db:push  # Run database migrations
 
 ## 📝 License
 
-ISC
+ Author: Marcos Vinicius
+ Last Updated: November 2025
