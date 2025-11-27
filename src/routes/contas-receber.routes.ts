@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { contasReceberController } from "../controllers/contas-receber.controller";
+import * as contasReceberController from "../controllers/contas-receber.controller";
 import { authenticate } from "../middleware/auth.middleware";
 
 export const contasReceberRouter = Router();

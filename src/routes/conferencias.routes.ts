@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { conferenciasController } from "../controllers/conferencias.controller";
+import * as conferenciasController from "../controllers/conferencias.controller";
 
 const router = Router();
 
@@ -41,7 +41,7 @@ router.post("/:id/reset", (req, res) =>
 
 // Deletar conferência de um item
 router.delete("/:id", (req, res) =>
-  conferenciasController.delete(req, res)
+  conferenciasController.deleteConferencia(req, res)
 );
 
 export default router;

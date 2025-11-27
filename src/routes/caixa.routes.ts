@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { caixaController } from "../controllers/caixa.controller";
+import * as caixaController from "../controllers/caixa.controller";
 import { authenticate } from "../middleware/auth.middleware";
 
 export const caixaRouter = Router();

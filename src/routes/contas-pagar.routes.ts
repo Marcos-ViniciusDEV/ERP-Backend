@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { contasPagarController } from "../controllers/contas-pagar.controller";
+import * as contasPagarController from "../controllers/contas-pagar.controller";
 import { authenticate } from "../middleware/auth.middleware";
 
 export const contasPagarRouter = Router();

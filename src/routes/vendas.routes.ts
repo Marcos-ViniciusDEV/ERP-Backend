@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { vendaController } from "../controllers/venda.controller";
+import * as vendaController from "../controllers/venda.controller";
 import { authenticate } from "../middleware/auth.middleware";
 
 export const vendasRouter = Router();

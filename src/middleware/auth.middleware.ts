@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { authService } from "../services/auth.service";
+import * as authService from "../services/auth.service";
 
 import type { User } from "../../drizzle/schema";
 

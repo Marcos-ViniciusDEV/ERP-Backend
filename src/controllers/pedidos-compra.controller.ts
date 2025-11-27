@@ -4,37 +4,33 @@
  */
 
 import { Request, Response } from "express";
-import { pedidoCompraService } from "../services/pedido-compra.service";
+import * as pedidoCompraService from "../services/pedido-compra.service";
 
-export class PedidosCompraController {
-  /**
-   * GET /pedidos-compra
-   * Lista todos os pedidos de compra
-   */
-  async list(req: Request, res: Response) {
-    try {
-      const pedidos = await pedidoCompraService.getAll();
-      res.json(pedidos);
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao buscar pedidos de compra" });
-    }
-  }
-
-  /**
-   * POST /pedidos-compra
-   * Cria novo pedido de compra
-   */
-  async create(req: Request, res: Response) {
-    try {
-      const pedido = await pedidoCompraService.create({
-        ...req.body,
-        usuarioId: req.user!.id,
-      });
-      res.status(201).json(pedido);
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao criar pedido de compra" });
-    }
+/**
+ * GET /pedidos-compra
+ * Lista todos os pedidos de compra
+ */
+export async function list(_req: Request, res: Response) {
+  try {
+    const pedidos = await pedidoCompraService.getAll();
+    res.json(pedidos);
+  } catch (error) {
+    res.status(500).json({ error: "Erro ao buscar pedidos de compra" });
   }
 }
 
-export const pedidosCompraController = new PedidosCompraController();
+/**
+ * POST /pedidos-compra
+ * Cria novo pedido de compra
+ */
+export async function create(req: Request, res: Response) {
+  try {
+    const pedido = await pedidoCompraService.create({
+      ...req.body,
+      usuarioId: req.user!.id,
+    });
+    res.status(201).json(pedido);
+  } catch (error) {
+    res.status(500).json({ error: "Erro ao criar pedido de compra" });
+  }
+}

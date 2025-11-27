@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { kardexController } from "../controllers/kardex.controller";
+import * as kardexController from "../controllers/kardex.controller";
 import { authenticate } from "../middleware/auth.middleware";
 
 export const kardexRouter = Router();

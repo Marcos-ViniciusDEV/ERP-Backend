@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { pdvController } from "../controllers/pdv.controller";
+import * as pdvController from "../controllers/pdv.controller";
 import { authenticate } from "../middleware/auth.middleware";
 
 export const pdvRouter = Router();

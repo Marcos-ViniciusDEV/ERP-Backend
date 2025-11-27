@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { inventarioController } from "../controllers/inventario.controller";
+import * as inventarioController from "../controllers/inventario.controller";
 import { authenticate } from "../middleware/auth.middleware";
 
 export const inventarioRouter = Router();
