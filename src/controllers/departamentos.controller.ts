@@ -31,3 +31,31 @@ export async function create(req: Request, res: Response) {
     res.status(500).json({ error: "Erro ao criar departamento" });
   }
 }
+
+/**
+ * PUT /departamentos/:id
+ * Atualiza departamento
+ */
+export async function update(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    await departamentoService.update(Number(id), req.body);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Erro ao atualizar departamento" });
+  }
+}
+
+/**
+ * DELETE /departamentos/:id
+ * Remove departamento
+ */
+export async function remove(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    await departamentoService.remove(Number(id));
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Erro ao remover departamento" });
+  }
+}

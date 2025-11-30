@@ -18,3 +18,6 @@ pdvRouter.get("/ativos", pdvController.getActivePDVs);
 
 // POST /api/pdv/enviar-carga - Envia carga para PDVs
 pdvRouter.post("/enviar-carga", pdvController.enviarCarga);
+
+// GET /api/pdv/movimentos - Relatório de Sangrias/Movimentos
+pdvRouter.get("/movimentos", pdvController.listMovements);

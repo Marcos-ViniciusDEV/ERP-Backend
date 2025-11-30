@@ -238,6 +238,7 @@ export const movimentacoesCaixa = mysqlTable("movimentacoes_caixa", {
     "FECHAMENTO",
     "VENDA",
   ]).notNull(),
+  pdvId: varchar("pdvId", { length: 50 }), // Added PDV ID
   valor: int("valor").notNull(), // em centavos
   dataMovimento: timestamp("dataMovimento").defaultNow().notNull(),
   operadorId: int("operadorId").references(() => users.id),

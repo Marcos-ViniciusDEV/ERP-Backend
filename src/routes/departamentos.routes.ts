@@ -7,3 +7,5 @@ export const departamentosRouter = Router();
 departamentosRouter.use(authenticate);
 departamentosRouter.get("/", departamentosController.list);
 departamentosRouter.post("/", departamentosController.create);
+departamentosRouter.put("/:id", departamentosController.update);
+departamentosRouter.delete("/:id", departamentosController.remove);

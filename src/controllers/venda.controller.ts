@@ -11,9 +11,18 @@ import type { CreateVendaInput } from "../models/venda.model";
  * GET /vendas
  * Lista todas as vendas
  */
-export async function list(_req: Request, res: Response) {
+export async function list(req: Request, res: Response) {
   try {
-    const vendas = await vendaService.list();
+    const { dataInicio, dataFim, codigoBarras, departamentoId } = req.query;
+    
+    const filters = {
+      dataInicio: dataInicio as string,
+      dataFim: dataFim as string,
+      codigoBarras: codigoBarras as string,
+      departamentoId: departamentoId ? Number(departamentoId) : undefined,
+    };
+
+    const vendas = await vendaService.list(filters);
     res.json(vendas);
   } catch (error) {
     res.status(500).json({ error: "Erro ao buscar vendas" });

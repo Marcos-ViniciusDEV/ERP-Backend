@@ -129,3 +129,35 @@ export async function enviarCarga(req: Request, res: Response) {
     });
   }
 }
+
+/**
+ * GET /api/pdv/movimentos
+ * Lista movimentações de caixa (Sangrias, etc)
+ */
+export async function listMovements(req: Request, res: Response) {
+  try {
+    const { dataInicio, dataFim, tipo, pdvId, operadorId } = req.query;
+
+    const filters = {
+      dataInicio: dataInicio as string,
+      dataFim: dataFim as string,
+      tipo: tipo as string,
+      pdvId: pdvId as string,
+      operadorId: operadorId ? Number(operadorId) : undefined,
+    };
+
+    const movimentos = await pdvService.listMovements(filters);
+    
+    res.json({
+      success: true,
+      data: movimentos,
+    });
+  } catch (error: any) {
+    console.error("Erro ao buscar movimentos:", error);
+    res.status(500).json({
+      success: false,
+      error: "Erro ao buscar movimentos",
+      message: error.message,
+    });
+  }
+}

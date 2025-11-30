@@ -208,6 +208,7 @@ export async function sincronizar(data: {
         dataMovimento: new Date(movimento.dataMovimento),
         operadorId: movimento.operadorId,
         observacao: movimento.observacao,
+        pdvId: movimento.pdvId,
       });
 
       resultado.movimentosProcessados++;
@@ -219,4 +220,56 @@ export async function sincronizar(data: {
   }
 
   return resultado;
+}
+
+/**
+ * Lista movimentações de caixa com filtros
+ */
+export async function listMovements(filters?: {
+  pdvId?: string;
+  operadorId?: number;
+  tipo?: string;
+  dataInicio?: string;
+  dataFim?: string;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions = [];
+  if (filters?.pdvId) conditions.push(eq(movimentacoesCaixa.pdvId, filters.pdvId));
+  if (filters?.operadorId)
+    conditions.push(eq(movimentacoesCaixa.operadorId, filters.operadorId));
+  if (filters?.tipo)
+    conditions.push(eq(movimentacoesCaixa.tipo, filters.tipo as any));
+  
+  if (filters?.dataInicio) {
+     const start = `${filters.dataInicio} 00:00:00`;
+     conditions.push(sql`${movimentacoesCaixa.dataMovimento} >= ${start}`);
+  }
+  
+  if (filters?.dataFim) {
+    const end = `${filters.dataFim} 23:59:59`;
+    conditions.push(sql`${movimentacoesCaixa.dataMovimento} <= ${end}`);
+  }
+
+  let query = db
+    .select({
+      id: movimentacoesCaixa.id,
+      tipo: movimentacoesCaixa.tipo,
+      valor: movimentacoesCaixa.valor,
+      dataMovimento: movimentacoesCaixa.dataMovimento,
+      observacao: movimentacoesCaixa.observacao,
+      pdvId: movimentacoesCaixa.pdvId,
+      operadorNome: users.name,
+    })
+    .from(movimentacoesCaixa)
+    .leftJoin(users, eq(movimentacoesCaixa.operadorId, users.id));
+
+  if (conditions.length > 0) {
+    // @ts-ignore
+    query.where(and(...conditions));
+  }
+
+  // @ts-ignore
+  return query.orderBy(sql`${movimentacoesCaixa.dataMovimento} DESC`);
 }

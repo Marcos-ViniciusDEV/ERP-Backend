@@ -9,9 +9,9 @@
  * - Geração de movimentações financeiras
  */
 
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, inArray } from "drizzle-orm";
 import { getDb } from "../libs/db";
-import { vendas, itensVenda, movimentacoesEstoque, movimentacoesCaixa, produtos } from "../../drizzle/schema";
+import { vendas, itensVenda, movimentacoesEstoque, movimentacoesCaixa, produtos, users } from "../../drizzle/schema";
 import type { CreateVendaInput } from "../models/venda.model";
 import * as produtoService from "./produto.service";
 import { randomUUID } from "crypto";
@@ -19,13 +19,92 @@ import { randomUUID } from "crypto";
 /**
  * Lista todas as vendas com seus itens
  */
-export async function list(): Promise<any[]> {
+/**
+ * Lista todas as vendas com seus itens e filtros
+ */
+export async function list(filters?: {
+  dataInicio?: string;
+  dataFim?: string;
+  codigoBarras?: string;
+  departamentoId?: number;
+  fornecedorId?: number;
+}): Promise<any[]> {
   const db = await getDb();
   if (!db) return [];
-  
-  // Buscar todas as vendas
-  const allVendas = await db.select().from(vendas).orderBy(desc(vendas.dataVenda));
-  
+
+  let query = db
+    .select({
+      id: vendas.id,
+      uuid: vendas.uuid,
+      numeroVenda: vendas.numeroVenda,
+      dataVenda: vendas.dataVenda,
+      valorTotal: vendas.valorTotal,
+      valorDesconto: vendas.valorDesconto,
+      valorLiquido: vendas.valorLiquido,
+      formaPagamento: vendas.formaPagamento,
+      status: vendas.status,
+      observacao: vendas.observacao,
+      operadorId: vendas.operadorId,
+      operadorNome: users.name, // Get name from users table
+      createdAt: vendas.createdAt,
+    })
+    .from(vendas)
+    .leftJoin(users, eq(vendas.operadorId, users.id))
+    .$dynamic();
+
+  const conditions = [];
+
+  if (filters?.dataInicio) {
+    const start = `${filters.dataInicio} 00:00:00`;
+    conditions.push(sql`${vendas.dataVenda} >= ${start}`);
+  }
+
+  if (filters?.dataFim) {
+    const end = `${filters.dataFim} 23:59:59`;
+    conditions.push(sql`${vendas.dataVenda} <= ${end}`);
+  }
+
+  // Filtros complexos que exigem joins (Barcode, Dept, Supplier)
+  // Como o drizzle não suporta facilmente filtro em tabela joinada retornando a tabela principal sem duplicatas
+  // Vamos fazer em duas etapas se houver esses filtros:
+  // 1. Buscar IDs das vendas que atendem aos critérios
+  // 2. Buscar as vendas por esses IDs
+
+  if (filters?.codigoBarras || filters?.departamentoId) {
+    let subQuery = db
+      .select({ vendaId: itensVenda.vendaId })
+      .from(itensVenda)
+      .innerJoin(produtos, eq(itensVenda.produtoId, produtos.id))
+      .$dynamic();
+
+    const subConditions = [];
+    if (filters.codigoBarras) {
+      subConditions.push(eq(produtos.codigoBarras, filters.codigoBarras));
+    }
+    if (filters.departamentoId) {
+      subConditions.push(eq(produtos.departamentoId, filters.departamentoId));
+    }
+
+    if (subConditions.length > 0) {
+      // @ts-ignore
+      subQuery = subQuery.where(and(...subConditions));
+      const matchingVendas = await subQuery;
+      const vendaIds = matchingVendas.map((v) => v.vendaId);
+      
+      if (vendaIds.length === 0) return []; // Nenhum resultado
+      
+      // @ts-ignore
+      conditions.push(inArray(vendas.id, vendaIds));
+    }
+  }
+
+  if (conditions.length > 0) {
+    // @ts-ignore
+    query = query.where(and(...conditions));
+  }
+
+  const allVendas = await query.orderBy(desc(vendas.dataVenda));
+
   // Para cada venda, buscar seus itens com detalhes do produto
   const vendasComItens = await Promise.all(
     allVendas.map(async (venda) => {
@@ -35,6 +114,7 @@ export async function list(): Promise<any[]> {
           vendaId: itensVenda.vendaId,
           produtoId: itensVenda.produtoId,
           produtoNome: produtos.descricao,
+          departamentoId: produtos.departamentoId, // Added departamentoId
           quantidade: itensVenda.quantidade,
           precoUnitario: itensVenda.precoUnitario,
           total: itensVenda.valorTotal,
@@ -43,14 +123,14 @@ export async function list(): Promise<any[]> {
         .from(itensVenda)
         .leftJoin(produtos, eq(itensVenda.produtoId, produtos.id))
         .where(eq(itensVenda.vendaId, venda.id));
-      
+
       return {
         ...venda,
         itens,
       };
     })
   );
-  
+
   return vendasComItens;
 }
 

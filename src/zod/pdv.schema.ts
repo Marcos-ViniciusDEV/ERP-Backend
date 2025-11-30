@@ -38,6 +38,7 @@ export const vendaPDVSchema = z.object({
  */
 export const movimentoCaixaPDVSchema = z.object({
   uuid: z.string().uuid(),
+  pdvId: z.string().max(50).optional(),
   tipo: z.enum(["ABERTURA", "SANGRIA", "REFORCO", "FECHAMENTO"]),
   valor: z.number().int().nonnegative(),
   observacao: z.string().optional(),
