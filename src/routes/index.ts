@@ -13,10 +13,12 @@ import { caixaRouter } from "./caixa.routes";
 import { inventarioRouter } from "./inventario.routes";
 import conferenciaRouter from "./conferencias.routes";
 import { pdvRouter } from "./pdv.routes";
+import { usersRouter } from "./users.routes";
 
 export const appRouter = Router();
 
 appRouter.use("/auth", authRouter);
+appRouter.use("/users", usersRouter);
 appRouter.use("/clientes", clientesRouter);
 appRouter.use("/produtos", produtosRouter);
 appRouter.use("/vendas", vendasRouter);
@@ -30,5 +32,6 @@ appRouter.use("/caixa", caixaRouter);
 appRouter.use("/inventario", inventarioRouter);
 appRouter.use("/conferencias", conferenciaRouter);
 appRouter.use("/pdv", pdvRouter);
+
 
 

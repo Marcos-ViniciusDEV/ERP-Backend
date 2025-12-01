@@ -18,10 +18,13 @@ export const users = mysqlTable("users", {
   name: text("name"),
   email: varchar("email", { length: 320 }).notNull().unique(),
   password: text("password"), // Hash da senha (salt:hash) - opcional para OAuth users
+  supervisorPassword: text("supervisorPassword"), // Senha do supervisor para liberações
   loginMethod: varchar("loginMethod", { length: 64 })
     .default("local")
     .notNull(),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  role: mysqlEnum("role", ["user", "admin", "pdv_operator"])
+    .default("user")
+    .notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
