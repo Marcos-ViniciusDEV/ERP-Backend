@@ -412,3 +412,74 @@ export const conferenciasMercadoria = mysqlTable("conferencias_mercadoria", {
 
 export type ConferenciaMercadoria = typeof conferenciasMercadoria.$inferSelect;
 export type InsertConferenciaMercadoria = typeof conferenciasMercadoria.$inferInsert;
+
+/**
+ * Ofertas Agendadas
+ */
+export const offers = mysqlTable("offers", {
+  id: int("id").autoincrement().primaryKey(),
+  produtoId: int("produtoId")
+    .notNull()
+    .references(() => produtos.id),
+  precoOferta: int("precoOferta").notNull(), // em centavos
+  dataInicio: timestamp("dataInicio").notNull(),
+  dataFim: timestamp("dataFim").notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Offer = typeof offers.$inferSelect;
+export type InsertOffer = typeof offers.$inferInsert;
+
+/**
+ * Materiais (Insumos)
+ */
+export const materiais = mysqlTable("materiais", {
+  id: int("id").autoincrement().primaryKey(),
+  nome: varchar("nome", { length: 255 }).notNull(),
+  unidade: varchar("unidade", { length: 10 }).notNull(),
+  estoque: int("estoque").notNull().default(0), // em quantidade (ex: gramas, ml, unidades)
+  custoUnitario: int("custoUnitario").notNull().default(0), // em centavos
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Material = typeof materiais.$inferSelect;
+export type InsertMaterial = typeof materiais.$inferInsert;
+
+/**
+ * Receitas (Ficha Técnica)
+ */
+export const receitas = mysqlTable("receitas", {
+  id: int("id").autoincrement().primaryKey(),
+  produtoId: int("produtoId")
+    .notNull()
+    .references(() => produtos.id),
+  materialId: int("materialId")
+    .notNull()
+    .references(() => materiais.id),
+  quantidade: int("quantidade").notNull(), // Quantidade do material usada para 1 unidade do produto
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Receita = typeof receitas.$inferSelect;
+export type InsertReceita = typeof receitas.$inferInsert;
+
+/**
+ * Produção
+ */
+export const producao = mysqlTable("producao", {
+  id: int("id").autoincrement().primaryKey(),
+  produtoId: int("produtoId")
+    .notNull()
+    .references(() => produtos.id),
+  quantidade: int("quantidade").notNull(), // Quantidade produzida
+  dataProducao: timestamp("dataProducao").defaultNow().notNull(),
+  usuarioId: int("usuarioId").references(() => users.id),
+  observacao: text("observacao"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Producao = typeof producao.$inferSelect;
+export type InsertProducao = typeof producao.$inferInsert;

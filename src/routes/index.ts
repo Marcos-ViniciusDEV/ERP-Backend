@@ -14,6 +14,10 @@ import { inventarioRouter } from "./inventario.routes";
 import conferenciaRouter from "./conferencias.routes";
 import { pdvRouter } from "./pdv.routes";
 import { usersRouter } from "./users.routes";
+import offersRouter from "./offers.routes";
+import materialsRouter from "./materials.routes";
+import recipesRouter from "./recipes.routes";
+import productionRouter from "./production.routes";
 
 export const appRouter = Router();
 
@@ -32,6 +36,10 @@ appRouter.use("/caixa", caixaRouter);
 appRouter.use("/inventario", inventarioRouter);
 appRouter.use("/conferencias", conferenciaRouter);
 appRouter.use("/pdv", pdvRouter);
+appRouter.use("/offers", offersRouter);
+appRouter.use("/materials", materialsRouter);
+appRouter.use("/recipes", recipesRouter);
+appRouter.use("/production", productionRouter);
 
 
 
