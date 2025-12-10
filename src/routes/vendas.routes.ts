@@ -8,3 +8,4 @@ vendasRouter.use(authenticate);
 vendasRouter.get("/periodo", vendaController.getByPeriodo);
 vendasRouter.get("/", vendaController.list);
 vendasRouter.post("/", vendaController.create);
+vendasRouter.get("/:id", vendaController.getById);

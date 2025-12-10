@@ -18,6 +18,8 @@ import offersRouter from "./offers.routes";
 import materialsRouter from "./materials.routes";
 import recipesRouter from "./recipes.routes";
 import productionRouter from "./production.routes";
+import { returnsRouter } from "./returns.routes";
+import { analyticsRouter } from "./analytics.routes";
 
 export const appRouter = Router();
 
@@ -40,6 +42,5 @@ appRouter.use("/offers", offersRouter);
 appRouter.use("/materials", materialsRouter);
 appRouter.use("/recipes", recipesRouter);
 appRouter.use("/production", productionRouter);
-
-
-
+appRouter.use("/returns", returnsRouter);
+appRouter.use("/analytics", analyticsRouter);

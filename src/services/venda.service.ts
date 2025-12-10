@@ -333,3 +333,63 @@ export async function getByProduto(produtoId: number): Promise<any[]> {
     .where(eq(itensVenda.produtoId, produtoId))
     .orderBy(desc(vendas.dataVenda));
 }
+
+/**
+ * Busca venda por ID ou Número
+ */
+export async function getById(idOrNumber: string | number): Promise<any | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const isId = !isNaN(Number(idOrNumber));
+  
+  const query = db
+    .select({
+      id: vendas.id,
+      uuid: vendas.uuid,
+      numeroVenda: vendas.numeroVenda,
+      dataVenda: vendas.dataVenda,
+      valorTotal: vendas.valorTotal,
+      valorDesconto: vendas.valorDesconto,
+      valorLiquido: vendas.valorLiquido,
+      formaPagamento: vendas.formaPagamento,
+      status: vendas.status,
+      observacao: vendas.observacao,
+      operadorId: vendas.operadorId,
+      operadorNome: users.name,
+      createdAt: vendas.createdAt,
+    })
+    .from(vendas)
+    .leftJoin(users, eq(vendas.operadorId, users.id));
+
+  // @ts-ignore
+  const whereClause = isId 
+    ? eq(vendas.id, Number(idOrNumber))
+    : eq(vendas.numeroVenda, String(idOrNumber));
+
+  const vendaResult = await query.where(whereClause).limit(1);
+  const venda = vendaResult[0];
+
+  if (!venda) return null;
+
+  // Buscar itens
+  const itens = await db
+    .select({
+      id: itensVenda.id,
+      vendaId: itensVenda.vendaId,
+      produtoId: itensVenda.produtoId,
+      produtoNome: produtos.descricao,
+      quantidade: itensVenda.quantidade,
+      precoUnitario: itensVenda.precoUnitario,
+      total: itensVenda.valorTotal,
+      desconto: itensVenda.valorDesconto,
+    })
+    .from(itensVenda)
+    .leftJoin(produtos, eq(itensVenda.produtoId, produtos.id))
+    .where(eq(itensVenda.vendaId, venda.id));
+
+  return {
+    ...venda,
+    itens,
+  };
+}

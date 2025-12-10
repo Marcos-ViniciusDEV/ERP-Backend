@@ -5,7 +5,6 @@ import {
   text,
   timestamp,
   varchar,
-  decimal,
   boolean,
 } from "drizzle-orm/mysql-core";
 
@@ -110,6 +109,7 @@ export const movimentacoesEstoque = mysqlTable("movimentacoes_estoque", {
     "AJUSTE_AUDITORIA",
     "TRANSFERENCIA_ENTRADA",
     "TRANSFERENCIA_SAIDA",
+    "DEVOLUCAO",
   ]).notNull(),
   quantidade: int("quantidade").notNull(), // positivo para entrada, negativo para saída
   saldoAnterior: int("saldoAnterior").notNull(),
@@ -483,3 +483,53 @@ export const producao = mysqlTable("producao", {
 
 export type Producao = typeof producao.$inferSelect;
 export type InsertProducao = typeof producao.$inferInsert;
+
+/**
+ * Devoluções / Trocas
+ */
+export const returns = mysqlTable("returns", {
+  id: int("id").autoincrement().primaryKey(),
+  originalSaleId: int("originalSaleId")
+    .references(() => vendas.id),
+  reason: text("reason").notNull(),
+  totalRefunded: int("totalRefunded").notNull(), // em centavos
+  operatorId: int("operatorId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Return = typeof returns.$inferSelect;
+export type InsertReturn = typeof returns.$inferInsert;
+
+/**
+ * Itens da Devolução
+ */
+export const returnItems = mysqlTable("return_items", {
+  id: int("id").autoincrement().primaryKey(),
+  returnId: int("returnId")
+    .notNull()
+    .references(() => returns.id, { onDelete: "cascade" }),
+  produtoId: int("produtoId")
+    .notNull()
+    .references(() => produtos.id),
+  quantidade: int("quantidade").notNull(),
+  condition: mysqlEnum("condition", ["GOOD", "DAMAGED"]).default("GOOD"),
+});
+
+export type ReturnItem = typeof returnItems.$inferSelect;
+export type InsertReturnItem = typeof returnItems.$inferInsert;
+
+/**
+ * Metas de Vendas
+ */
+export const salesGoals = mysqlTable("sales_goals", {
+  id: int("id").autoincrement().primaryKey(),
+  month: int("month").notNull(), // 1-12
+  year: int("year").notNull(),
+  targetAmount: int("targetAmount").notNull(), // em centavos
+  sellerId: int("sellerId").references(() => users.id), // Opcional, se for meta individual
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SalesGoal = typeof salesGoals.$inferSelect;
+export type InsertSalesGoal = typeof salesGoals.$inferInsert;

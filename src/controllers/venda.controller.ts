@@ -74,3 +74,22 @@ export async function totalVendasHoje(_req: Request, res: Response) {
     res.status(500).json({ error: "Erro ao buscar total de vendas de hoje" });
   }
 }
+
+/**
+ * GET /vendas/:id
+ * Busca venda por ID ou Número
+ */
+export async function getById(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const venda = await vendaService.getById(id);
+    
+    if (!venda) {
+      return res.status(404).json({ error: "Venda não encontrada" });
+    }
+    
+    res.json(venda);
+  } catch (error) {
+    res.status(500).json({ error: "Erro ao buscar venda" });
+  }
+}
