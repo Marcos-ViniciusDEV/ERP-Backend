@@ -45,7 +45,8 @@ export async function list(filters?: {
       status: vendas.status,
       observacao: vendas.observacao,
       operadorId: vendas.operadorId,
-      operadorNome: users.name, // Get name from users table
+      operadorNome: sql<string>`COALESCE(${users.name}, ${vendas.operadorNome})`,
+      pdvId: vendas.pdvId,
       createdAt: vendas.createdAt,
     })
     .from(vendas)
@@ -356,7 +357,8 @@ export async function getById(idOrNumber: string | number): Promise<any | null> 
       status: vendas.status,
       observacao: vendas.observacao,
       operadorId: vendas.operadorId,
-      operadorNome: users.name,
+      operadorNome: sql<string>`COALESCE(${users.name}, ${vendas.operadorNome})`,
+      pdvId: vendas.pdvId,
       createdAt: vendas.createdAt,
     })
     .from(vendas)
