@@ -17,9 +17,9 @@
  */
 
 import { SignJWT, jwtVerify } from "jose";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import type { User } from "../../drizzle/schema";
-import { users } from "../../drizzle/schema";
+import { users, empresas } from "../../drizzle/schema";
 import { getDb } from "../libs/db";
 import { ENV } from "../libs/env";
 import { hashPassword, verifyPassword } from "../libs/password";
@@ -34,6 +34,7 @@ export type TokenPayload = {
   email: string | null;
   name: string | null;
   role: string;
+  empresaId: number | null; // null = super_admin do SaaS
 };
 
 /**
@@ -80,6 +81,7 @@ export async function createToken(user: User): Promise<string> {
     email: user.email,
     name: user.name,
     role: user.role,
+    empresaId: user.empresaId ?? null,
   })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setIssuedAt()
@@ -109,6 +111,7 @@ export async function verifyToken(token: string | null | undefined): Promise<Tok
       email: payload.email as string | null,
       name: payload.name as string | null,
       role: payload.role as string,
+      empresaId: (payload.empresaId as number | null) ?? null,
     };
   } catch (error) {
     console.warn("[Auth] Token verification failed:", String(error));
@@ -165,14 +168,41 @@ export async function authenticateRequest(req: AuthRequest): Promise<User | null
 }
 
 /**
- * Realiza login com email e senha
+ * Valida os dados da empresa (CNPJ e Senha de Acesso)
  */
-export async function login(email: string, password: string) {
+export async function validateCompany(cnpj: string, senhaAcesso: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const [empresa] = await db
+    .select()
+    .from(empresas)
+    .where(and(eq(empresas.cnpj, cnpj), eq(empresas.ativo, true)))
+    .limit(1);
+
+  if (!empresa) {
+    throw new Error("Empresa não encontrada com este CNPJ");
+  }
+
+  // Validamos a senha de acesso (senhaAtivacao)
+  // No momento aceitamos texto plano ou se o usuário digitou o código de acesso
+  if (empresa.senhaAtivacao !== senhaAcesso && empresa.codigoAcesso !== senhaAcesso) {
+    throw new Error("Senha de acesso da empresa incorreta");
+  }
+
+  return empresa;
+}
+
+/**
+ * Realiza login com email, senha e código da empresa.
+ * O codigoEmpresa é obrigatório para usuários normais.
+ * Super admins (role=super_admin) não precisam informar empresa.
+ */
+export async function login(email: string, password: string, codigoEmpresa?: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
   const userResult = await db.select().from(users).where(eq(users.email, email)).limit(1);
-
   const user = userResult[0];
 
   if (!user || !user.password) {
@@ -183,12 +213,35 @@ export async function login(email: string, password: string) {
     throw new Error("Senha incorreta");
   }
 
-  const token = await createToken(user);
+  // Super admin não precisa de empresa
+  if (user.role === "super_admin") {
+    const token = await createToken(user);
+    return { user, token };
+  }
 
-  return {
-    user,
-    token,
-  };
+  // Usuários normais precisam informar o código da empresa
+  if (!codigoEmpresa) {
+    throw new Error("Código da empresa é obrigatório");
+  }
+
+  const empresaResult = await db
+    .select()
+    .from(empresas)
+    .where(and(eq(empresas.codigoAcesso, codigoEmpresa), eq(empresas.ativo, true)))
+    .limit(1);
+
+  const empresa = empresaResult[0];
+  if (!empresa) {
+    throw new Error("Empresa não encontrada ou inativa");
+  }
+
+  // Verificar se o usuário pertence à empresa informada
+  if (user.empresaId !== empresa.id) {
+    throw new Error("Usuário não pertence a esta empresa");
+  }
+
+  const token = await createToken(user);
+  return { user, empresa, token };
 }
 
 /**

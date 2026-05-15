@@ -22,7 +22,7 @@ export async function list(req: Request, res: Response) {
       departamentoId: departamentoId ? Number(departamentoId) : undefined,
     };
 
-    const vendas = await vendaService.list(filters);
+    const vendas = await vendaService.list(req.empresaId!, filters);
     res.json(vendas);
   } catch (error) {
     res.status(500).json({ error: "Erro ao buscar vendas" });
@@ -37,7 +37,7 @@ export async function create(req: Request, res: Response) {
   try {
     const data: CreateVendaInput = req.body;
     const usuarioId = req.user!.id;
-    const venda = await vendaService.create(data, usuarioId);
+    const venda = await vendaService.create(req.empresaId!, data, usuarioId);
     res.status(201).json(venda);
   } catch (error) {
     res.status(500).json({ error: "Erro ao criar venda" });
@@ -54,7 +54,7 @@ export async function getByPeriodo(req: Request, res: Response) {
     
     console.log("[VendaController] Searching period:", { dataInicio, dataFim });
 
-    const vendas = await vendaService.getByPeriodo(dataInicio as string, dataFim as string);
+    const vendas = await vendaService.getByPeriodo(req.empresaId!, dataInicio as string, dataFim as string);
     res.json(vendas);
   } catch (error) {
     console.error("[VendaController] Error searching sales:", error);
@@ -66,9 +66,9 @@ export async function getByPeriodo(req: Request, res: Response) {
  * GET /vendas/hoje
  * Total de vendas do dia
  */
-export async function totalVendasHoje(_req: Request, res: Response) {
+  export async function totalVendasHoje(req: Request, res: Response) {
   try {
-    const total = await vendaService.totalVendasHoje();
+    const total = await vendaService.totalVendasHoje(req.empresaId!);
     res.json(total);
   } catch (error) {
     res.status(500).json({ error: "Erro ao buscar total de vendas de hoje" });
@@ -82,7 +82,7 @@ export async function totalVendasHoje(_req: Request, res: Response) {
 export async function getById(req: Request, res: Response) {
   try {
     const { id } = req.params;
-    const venda = await vendaService.getById(id);
+    const venda = await vendaService.getById(req.empresaId!, id);
     
     if (!venda) {
       return res.status(404).json({ error: "Venda não encontrada" });

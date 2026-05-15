@@ -19,9 +19,9 @@ import type { CreateProdutoInput, UpdateProdutoInput } from "../models/produto.m
  * GET /produtos
  * Lista todos os produtos
  */
-export async function list(_req: Request, res: Response) {
+export async function list(req: Request, res: Response) {
   try {
-    const produtos = await produtoService.list();
+    const produtos = await produtoService.list(req.empresaId!);
     res.json(produtos);
   } catch (error: any) {
     console.error("Error in ProdutoController.list:", error);
@@ -36,7 +36,7 @@ export async function list(_req: Request, res: Response) {
 export async function getById(req: Request, res: Response) {
   try {
     const id = parseInt(req.params.id);
-    const produto = await produtoService.getById(id);
+    const produto = await produtoService.getById(req.empresaId!, id);
     if (!produto) {
       res.status(404).json({ error: `Produto ${id} não encontrado` });
       return;
@@ -54,7 +54,7 @@ export async function getById(req: Request, res: Response) {
 export async function create(req: Request, res: Response) {
   try {
     const data: CreateProdutoInput = req.body;
-    const produto = await produtoService.create(data);
+    const produto = await produtoService.create(req.empresaId!, data);
     res.status(201).json(produto);
   } catch (error) {
     res.status(500).json({ error: "Erro ao criar produto" });
@@ -69,7 +69,7 @@ export async function update(req: Request, res: Response) {
   try {
     const id = parseInt(req.params.id);
     const data: UpdateProdutoInput = { id, ...req.body };
-    await produtoService.update(data);
+    await produtoService.update(req.empresaId!, data);
     res.json({ success: true });
   } catch (error: any) {
     console.error("Error in ProdutoController.update:", error);
@@ -84,7 +84,7 @@ export async function update(req: Request, res: Response) {
 export async function deleteProduto(req: Request, res: Response) {
   try {
     const id = parseInt(req.params.id);
-    await produtoService.deleteProduto(id);
+    await produtoService.deleteProduto(req.empresaId!, id);
     res.json({ success: true });
   } catch (error: any) {
     console.error("Error in ProdutoController.delete:", error);
@@ -100,7 +100,7 @@ export async function updatePrecos(req: Request, res: Response) {
   try {
     const produtoId = parseInt(req.params.id);
     const { precoCusto } = req.body;
-    const result = await produtoService.updatePrecos(produtoId, precoCusto);
+    const result = await produtoService.updatePrecos(req.empresaId!, produtoId, precoCusto);
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: "Erro ao atualizar preços" });
@@ -111,9 +111,9 @@ export async function updatePrecos(req: Request, res: Response) {
  * GET /produtos/estoque-baixo
  * Lista produtos com estoque abaixo do mínimo
  */
-export async function produtosEstoqueBaixo(_req: Request, res: Response) {
+export async function produtosEstoqueBaixo(req: Request, res: Response) {
   try {
-    const produtos = await produtoService.produtosEstoqueBaixo();
+    const produtos = await produtoService.produtosEstoqueBaixo(req.empresaId!);
     res.json(produtos);
   } catch (error) {
     res.status(500).json({ error: "Erro ao buscar produtos com estoque baixo" });
@@ -124,9 +124,9 @@ export async function produtosEstoqueBaixo(_req: Request, res: Response) {
  * POST /produtos/backfill-last-purchase
  * Preenche dados da última compra
  */
-export async function backfillLastPurchaseData(_req: Request, res: Response) {
+export async function backfillLastPurchaseData(req: Request, res: Response) {
   try {
-    const result = await produtoService.backfillLastPurchaseData();
+    const result = await produtoService.backfillLastPurchaseData(req.empresaId!);
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: "Erro ao preencher dados da última compra" });
@@ -140,7 +140,7 @@ export async function backfillLastPurchaseData(_req: Request, res: Response) {
 export async function getMovimentos(req: Request, res: Response) {
   try {
     const id = parseInt(req.params.id);
-    const result = await kardexService.listByProduto(id);
+    const result = await kardexService.listByProduto(req.empresaId!, id);
     res.json(result);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -154,7 +154,7 @@ export async function getMovimentos(req: Request, res: Response) {
 export async function getHistoricoVendas(req: Request, res: Response) {
   try {
     const id = parseInt(req.params.id);
-    const result = await vendaService.getByProduto(id);
+    const result = await vendaService.getByProduto(req.empresaId!, id);
     res.json(result);
   } catch (error: any) {
     res.status(500).json({ error: error.message });

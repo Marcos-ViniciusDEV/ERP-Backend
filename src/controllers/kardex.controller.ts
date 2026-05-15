@@ -14,7 +14,7 @@ import { CreateKardexInput } from "../models/kardex.model";
 export async function listByProduto(req: Request, res: Response) {
   try {
     const produtoId = parseInt(req.params.produtoId);
-    const movimentacoes = await kardexService.listByProduto(produtoId);
+    const movimentacoes = await kardexService.listByProduto(req.empresaId!, produtoId);
     res.json(movimentacoes);
   } catch (error) {
     res.status(500).json({ error: "Erro ao buscar movimentações" });
@@ -25,9 +25,9 @@ export async function listByProduto(req: Request, res: Response) {
 /**
  * Lista todas as movimentações
  */
-export async function listAll(_req: Request, res: Response) {
+export async function listAll(req: Request, res: Response) {
   try {
-    const movimentacoes = await kardexService.getAll();
+    const movimentacoes = await kardexService.getAll(req.empresaId!);
     res.json(movimentacoes);
   } catch (error) {
     res.status(500).json({ error: "Erro ao buscar movimentações" });
@@ -41,7 +41,7 @@ export async function create(req: Request, res: Response) {
   try {
     const data: CreateKardexInput = req.body;
     const usuarioId = req.user!.id;
-    const movimentacao = await kardexService.create(data, usuarioId);
+    const movimentacao = await kardexService.create(req.empresaId!, data, usuarioId);
     res.status(201).json(movimentacao);
   } catch (error) {
     res.status(500).json({ error: "Erro ao criar movimentação" });
@@ -54,7 +54,7 @@ export async function create(req: Request, res: Response) {
 export async function deleteByDocumento(req: Request, res: Response) {
   try {
     const { documento } = req.params;
-    await kardexService.deleteByDocumento(documento);
+    await kardexService.deleteByDocumento(req.empresaId!, documento);
     return res.status(200).json({ message: "Movimentações deletadas com sucesso" });
   } catch (error: any) {
     return res.status(500).json({ message: error.message });
@@ -67,7 +67,7 @@ export async function deleteBatch(req: Request, res: Response) {
     if (!ids || !Array.isArray(ids)) {
       return res.status(400).json({ message: "IDs inválidos" });
     }
-    await kardexService.deleteBatch(ids);
+    await kardexService.deleteBatch(req.empresaId!, ids);
     return res.status(200).json({ message: "Movimentações deletadas com sucesso" });
   } catch (error: any) {
     return res.status(500).json({ message: error.message });

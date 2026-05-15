@@ -1,18 +1,56 @@
 import {
-  int,
-  mysqlEnum,
   mysqlTable,
-  text,
-  timestamp,
   varchar,
+  int,
+  timestamp,
+  mysqlEnum,
+  text,
   boolean,
+  decimal,
+  foreignKey
 } from "drizzle-orm/mysql-core";
+
+/**
+ * Empresas (Tenants) — cada registro representa um cliente do SaaS.
+ */
+export const empresas = mysqlTable("empresas", {
+  id: int("id").autoincrement().primaryKey(),
+  razaoSocial: varchar("razaoSocial", { length: 255 }).notNull(),
+  nomeFantasia: varchar("nomeFantasia", { length: 255 }),
+  cnpj: varchar("cnpj", { length: 18 }).notNull().unique(),
+  codigoAcesso: varchar("codigoAcesso", { length: 20 }).notNull().unique(), // ex: "LOJA-X123"
+  senhaAtivacao: text("senhaAtivacao").notNull(), // Hash da senha para ativar PDVs
+  plano: mysqlEnum("plano", ["BASICO", "PRO", "ENTERPRISE"]).default("BASICO").notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Empresa = typeof empresas.$inferSelect;
+export type InsertEmpresa = typeof empresas.$inferInsert;
+
+/**
+ * PDVs Ativos — terminais registrados por empresa.
+ */
+export const pdvsAtivos = mysqlTable("pdvs_ativos", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  pdvId: varchar("pdvId", { length: 50 }).notNull(),   // ex: "PDV-01"
+  apelido: varchar("apelido", { length: 100 }),          // ex: "Caixa Central"
+  ultimoAcesso: timestamp("ultimoAcesso"),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type PdvAtivo = typeof pdvsAtivos.$inferSelect;
+export type InsertPdvAtivo = typeof pdvsAtivos.$inferInsert;
 
 /**
  * Core user table backing auth flow.
  */
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").references(() => empresas.id), // null = super admin do SaaS
   openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }).notNull().unique(),
@@ -21,7 +59,7 @@ export const users = mysqlTable("users", {
   loginMethod: varchar("loginMethod", { length: 64 })
     .default("local")
     .notNull(),
-  role: mysqlEnum("role", ["user", "admin", "pdv_operator"])
+  role: mysqlEnum("role", ["user", "admin", "pdv_operator", "super_admin"])
     .default("user")
     .notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -37,7 +75,8 @@ export type InsertUser = typeof users.$inferInsert;
  */
 export const departamentos = mysqlTable("departamentos", {
   id: int("id").autoincrement().primaryKey(),
-  codigo: varchar("codigo", { length: 20 }).notNull().unique(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  codigo: varchar("codigo", { length: 20 }).notNull(),
   nome: varchar("nome", { length: 100 }).notNull(),
   descricao: text("descricao"),
   ativo: boolean("ativo").default(true).notNull(),
@@ -54,7 +93,8 @@ export type InsertDepartamento = typeof departamentos.$inferInsert;
  */
 export const produtos = mysqlTable("produtos", {
   id: int("id").autoincrement().primaryKey(),
-  codigo: varchar("codigo", { length: 50 }).notNull().unique(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  codigo: varchar("codigo", { length: 50 }).notNull(),
   codigoBarras: varchar("codigoBarras", { length: 50 }),
   descricao: text("descricao").notNull(),
   marca: varchar("marca", { length: 100 }),
@@ -97,6 +137,7 @@ export type InsertProduto = typeof produtos.$inferInsert;
  */
 export const movimentacoesEstoque = mysqlTable("movimentacoes_estoque", {
   id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
   produtoId: int("produtoId")
     .notNull()
     .references(() => produtos.id),
@@ -138,6 +179,7 @@ export type InsertMovimentacaoEstoque =
  */
 export const inventarios = mysqlTable("inventarios", {
   id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
   descricao: varchar("descricao", { length: 255 }).notNull(),
   status: mysqlEnum("status", ["ABERTO", "FECHADO", "CANCELADO"])
     .default("ABERTO")
@@ -184,6 +226,7 @@ export type InsertInventarioItem = typeof inventariosItens.$inferInsert;
  */
 export const vendas = mysqlTable("vendas", {
   id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
   uuid: varchar("uuid", { length: 36 }).notNull().unique(), // Added UUID
   numeroVenda: varchar("numeroVenda", { length: 50 }).notNull().unique(),
   ccf: varchar("ccf", { length: 6 }), // Added CCF
@@ -234,6 +277,7 @@ export type InsertItemVenda = typeof itensVenda.$inferInsert;
  */
 export const movimentacoesCaixa = mysqlTable("movimentacoes_caixa", {
   id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
   tipo: mysqlEnum("tipo", [
     "SANGRIA",
     "REFORCO",
@@ -257,6 +301,7 @@ export type InsertMovimentacaoCaixa = typeof movimentacoesCaixa.$inferInsert;
  */
 export const fornecedores = mysqlTable("fornecedores", {
   id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
   razaoSocial: varchar("razaoSocial", { length: 255 }).notNull(),
   nomeFantasia: varchar("nomeFantasia", { length: 255 }),
   cnpj: varchar("cnpj", { length: 18 }).notNull().unique(),
@@ -277,7 +322,8 @@ export type InsertFornecedor = typeof fornecedores.$inferInsert;
  */
 export const pedidosCompra = mysqlTable("pedidos_compra", {
   id: int("id").autoincrement().primaryKey(),
-  numeroPedido: varchar("numeroPedido", { length: 50 }).notNull().unique(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  numeroPedido: varchar("numeroPedido", { length: 50 }).notNull(),
   fornecedorId: int("fornecedorId")
     .notNull()
     .references(() => fornecedores.id),
@@ -321,6 +367,7 @@ export type InsertItemPedidoCompra = typeof itensPedidoCompra.$inferInsert;
  */
 export const contasPagar = mysqlTable("contas_pagar", {
   id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
   descricao: varchar("descricao", { length: 255 }).notNull(),
   fornecedorId: int("fornecedorId").references(() => fornecedores.id),
   valor: int("valor").notNull(), // em centavos
@@ -344,6 +391,7 @@ export type InsertContaPagar = typeof contasPagar.$inferInsert;
  */
 export const contasReceber = mysqlTable("contas_receber", {
   id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
   descricao: varchar("descricao", { length: 255 }).notNull(),
   valor: int("valor").notNull(), // em centavos
   dataVencimento: timestamp("dataVencimento").notNull(),
@@ -366,6 +414,7 @@ export type InsertContaReceber = typeof contasReceber.$inferInsert;
  */
 export const clientes = mysqlTable("clientes", {
   id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
   nome: varchar("nome", { length: 255 }).notNull(),
   cpfCnpj: varchar("cpfCnpj", { length: 20 }).unique(),
   email: varchar("email", { length: 320 }),
@@ -385,9 +434,7 @@ export type InsertCliente = typeof clientes.$inferInsert;
  */
 export const conferenciasMercadoria = mysqlTable("conferencias_mercadoria", {
   id: int("id").autoincrement().primaryKey(),
-  movimentacaoEstoqueId: int("movimentacaoEstoqueId")
-    .notNull()
-    .references(() => movimentacoesEstoque.id),
+  movimentacaoEstoqueId: int("movimentacaoEstoqueId").notNull(),
   produtoId: int("produtoId")
     .notNull()
     .references(() => produtos.id),
@@ -408,7 +455,13 @@ export const conferenciasMercadoria = mysqlTable("conferencias_mercadoria", {
     .references(() => users.id),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => ({
+  movFK: foreignKey({
+    columns: [table.movimentacaoEstoqueId],
+    foreignColumns: [movimentacoesEstoque.id],
+    name: "fk_conf_mov_est",
+  })
+}));
 
 export type ConferenciaMercadoria = typeof conferenciasMercadoria.$inferSelect;
 export type InsertConferenciaMercadoria = typeof conferenciasMercadoria.$inferInsert;
@@ -418,6 +471,7 @@ export type InsertConferenciaMercadoria = typeof conferenciasMercadoria.$inferIn
  */
 export const offers = mysqlTable("offers", {
   id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
   produtoId: int("produtoId")
     .notNull()
     .references(() => produtos.id),
@@ -436,6 +490,7 @@ export type InsertOffer = typeof offers.$inferInsert;
  */
 export const materiais = mysqlTable("materiais", {
   id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
   nome: varchar("nome", { length: 255 }).notNull(),
   unidade: varchar("unidade", { length: 10 }).notNull(),
   estoque: int("estoque").notNull().default(0), // em quantidade (ex: gramas, ml, unidades)
@@ -471,6 +526,7 @@ export type InsertReceita = typeof receitas.$inferInsert;
  */
 export const producao = mysqlTable("producao", {
   id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
   produtoId: int("produtoId")
     .notNull()
     .references(() => produtos.id),
@@ -523,6 +579,7 @@ export type InsertReturnItem = typeof returnItems.$inferInsert;
  */
 export const salesGoals = mysqlTable("sales_goals", {
   id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
   month: int("month").notNull(), // 1-12
   year: int("year").notNull(),
   targetAmount: int("targetAmount").notNull(), // em centavos

@@ -18,19 +18,19 @@ import type { Produto } from "../types/produto.types";
 /**
  * Lista todos os produtos
  */
-export async function list(): Promise<Produto[]> {
+export async function list(empresaId: number): Promise<Produto[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(produtos);
+  return db.select().from(produtos).where(eq(produtos.empresaId, empresaId));
 }
 
 /**
  * Busca produto por ID
  */
-export async function getById(id: number): Promise<Produto | undefined> {
+export async function getById(empresaId: number, id: number): Promise<Produto | undefined> {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(produtos).where(eq(produtos.id, id)).limit(1);
+  const result = await db.select().from(produtos).where(and(eq(produtos.id, id), eq(produtos.empresaId, empresaId))).limit(1);
   return result[0];
 }
 
@@ -38,7 +38,7 @@ export async function getById(id: number): Promise<Produto | undefined> {
  * Cria novo produto
  * Calcula preço de venda baseado na margem se não fornecido
  */
-export async function create(data: CreateProdutoInput): Promise<Produto | undefined> {
+export async function create(empresaId: number, data: CreateProdutoInput): Promise<Produto | undefined> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -49,7 +49,7 @@ export async function create(data: CreateProdutoInput): Promise<Produto | undefi
   }
 
   // Verificar código duplicado
-  const existing = await db.select().from(produtos).where(eq(produtos.codigo, data.codigo)).limit(1);
+  const existing = await db.select().from(produtos).where(and(eq(produtos.codigo, data.codigo), eq(produtos.empresaId, empresaId))).limit(1);
   if (existing.length > 0) {
     throw new Error(`Já existe um produto com o código ${data.codigo}`);
   }
@@ -58,28 +58,29 @@ export async function create(data: CreateProdutoInput): Promise<Produto | undefi
 
   const [result] = await db.insert(produtos).values({
     ...data,
+    empresaId,
     precoVenda: finalPrecoVenda,
     precoPdv: finalPrecoVenda,
   });
 
-  return getById(Number(result.insertId));
+  return getById(empresaId, Number(result.insertId));
 }
 
 /**
  * Atualiza produto existente
  */
-export async function update(data: UpdateProdutoInput): Promise<void> {
+export async function update(empresaId: number, data: UpdateProdutoInput): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const produto = await getById(data.id);
+  const produto = await getById(empresaId, data.id);
   if (!produto) {
     throw new Error(`Produto ${data.id} não encontrado`);
   }
 
   // Verificar código duplicado
   if (data.codigo && data.codigo !== produto.codigo) {
-    const existing = await db.select().from(produtos).where(eq(produtos.codigo, data.codigo)).limit(1);
+    const existing = await db.select().from(produtos).where(and(eq(produtos.codigo, data.codigo), eq(produtos.empresaId, empresaId))).limit(1);
     if (existing.length > 0) {
       throw new Error(`Já existe um produto com o código ${data.codigo}`);
     }
@@ -96,36 +97,37 @@ export async function update(data: UpdateProdutoInput): Promise<void> {
     payload.dataPrimeiraVenda = new Date(payload.dataPrimeiraVenda);
   }
 
-  await db.update(produtos).set(payload).where(eq(produtos.id, id));
+  await db.update(produtos).set(payload).where(and(eq(produtos.id, id), eq(produtos.empresaId, empresaId)));
 }
 
 /**
  * Deleta produto
  * Remove movimentações antes de deletar (Cascade)
  */
-export async function deleteProduto(id: number): Promise<void> {
+export async function deleteProduto(empresaId: number, id: number): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const produto = await getById(id);
+  const produto = await getById(empresaId, id);
   if (!produto) {
     throw new Error(`Produto ${id} não encontrado`);
   }
 
   // Deletar movimentações do estoque antes de excluir o produto
-  await db.delete(movimentacoesEstoque).where(eq(movimentacoesEstoque.produtoId, id));
+  // Precisamos ter certeza que estamos apagando algo do tenant
+  await db.delete(movimentacoesEstoque).where(and(eq(movimentacoesEstoque.produtoId, id), eq(movimentacoesEstoque.empresaId, empresaId)));
 
-  await db.delete(produtos).where(eq(produtos.id, id));
+  await db.delete(produtos).where(and(eq(produtos.id, id), eq(produtos.empresaId, empresaId)));
 }
 
 /**
  * Atualiza preços do produto recalculando margem
  */
-export async function updatePrecos(produtoId: number, precoCusto: number) {
+export async function updatePrecos(empresaId: number, produtoId: number, precoCusto: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const produto = await getById(produtoId);
+  const produto = await getById(empresaId, produtoId);
   if (!produto) {
     throw new Error(`Produto ${produtoId} não encontrado`);
   }
@@ -134,7 +136,7 @@ export async function updatePrecos(produtoId: number, precoCusto: number) {
   const margemLucro = produto.margemLucro || 30;
   const precoVenda = Math.round(precoCusto * (1 + margemLucro / 100));
 
-  await db.update(produtos).set({ precoCusto, precoVenda }).where(eq(produtos.id, produtoId));
+  await db.update(produtos).set({ precoCusto, precoVenda }).where(and(eq(produtos.id, produtoId), eq(produtos.empresaId, empresaId)));
 
   return { precoCusto, precoVenda, margemLucro };
 }
@@ -142,8 +144,8 @@ export async function updatePrecos(produtoId: number, precoCusto: number) {
 /**
  * Verifica se produto tem estoque disponível
  */
-export async function checkEstoque(produtoId: number, quantidade: number): Promise<boolean> {
-  const produto = await getById(produtoId);
+export async function checkEstoque(empresaId: number, produtoId: number, quantidade: number): Promise<boolean> {
+  const produto = await getById(empresaId, produtoId);
   if (!produto) {
     throw new Error(`Produto ${produtoId} não encontrado`);
   }
@@ -154,19 +156,19 @@ export async function checkEstoque(produtoId: number, quantidade: number): Promi
 /**
  * Busca produtos com estoque abaixo do mínimo
  */
-export async function produtosEstoqueBaixo(): Promise<Produto[]> {
-  const produtos = await list();
+export async function produtosEstoqueBaixo(empresaId: number): Promise<Produto[]> {
+  const produtos = await list(empresaId);
   return produtos.filter((p) => p.estoque <= p.estoqueMinimo);
 }
 
 /**
  * Preenche dados da última compra baseado no histórico do Kardex
  */
-export async function backfillLastPurchaseData() {
+export async function backfillLastPurchaseData(empresaId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const allProdutos = await list();
+  const allProdutos = await list(empresaId);
   let updatedCount = 0;
 
   for (const produto of allProdutos) {
@@ -176,6 +178,7 @@ export async function backfillLastPurchaseData() {
       .where(
         and(
           eq(movimentacoesEstoque.produtoId, produto.id),
+          eq(movimentacoesEstoque.empresaId, empresaId),
           eq(movimentacoesEstoque.tipo, "ENTRADA_NFE")
         )
       )
@@ -190,7 +193,7 @@ export async function backfillLastPurchaseData() {
           dataUltimaCompra: entry.createdAt,
           quantidadeUltimaCompra: entry.quantidade,
         })
-        .where(eq(produtos.id, produto.id));
+        .where(and(eq(produtos.id, produto.id), eq(produtos.empresaId, empresaId)));
       updatedCount++;
     }
   }

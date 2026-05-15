@@ -10,9 +10,9 @@ import * as departamentoService from "../services/departamento.service";
  * GET /departamentos
  * Lista todos os departamentos
  */
-export async function list(_req: Request, res: Response) {
+export async function list(req: Request, res: Response) {
   try {
-    const departamentos = await departamentoService.getAll();
+    const departamentos = await departamentoService.getAll(req.empresaId!);
     res.json(departamentos);
   } catch (error) {
     res.status(500).json({ error: "Erro ao buscar departamentos" });
@@ -25,9 +25,10 @@ export async function list(_req: Request, res: Response) {
  */
 export async function create(req: Request, res: Response) {
   try {
-    const departamento = await departamentoService.create(req.body);
+    const departamento = await departamentoService.create(req.empresaId!, req.body);
     res.status(201).json(departamento);
   } catch (error) {
+    console.error("[DepartamentosController] Error creating department:", error);
     res.status(500).json({ error: "Erro ao criar departamento" });
   }
 }
@@ -39,7 +40,7 @@ export async function create(req: Request, res: Response) {
 export async function update(req: Request, res: Response) {
   try {
     const { id } = req.params;
-    await departamentoService.update(Number(id), req.body);
+    await departamentoService.update(req.empresaId!, Number(id), req.body);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: "Erro ao atualizar departamento" });
@@ -53,7 +54,7 @@ export async function update(req: Request, res: Response) {
 export async function remove(req: Request, res: Response) {
   try {
     const { id } = req.params;
-    await departamentoService.remove(Number(id));
+    await departamentoService.remove(req.empresaId!, Number(id));
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: "Erro ao remover departamento" });

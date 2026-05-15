@@ -4,6 +4,7 @@ import { z } from "zod";
 export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  codigoEmpresa: z.string().optional(),
 });
 
 export const registerSchema = z.object({

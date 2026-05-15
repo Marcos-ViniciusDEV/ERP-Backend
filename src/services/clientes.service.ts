@@ -1,4 +1,4 @@
-import { eq, like, or, desc } from "drizzle-orm";
+import { eq, like, or, desc, and } from "drizzle-orm";
 import { getDb } from "../libs/db";
 import { clientes } from "../../drizzle/schema";
 import fs from "fs";
@@ -41,7 +41,7 @@ const saveImage = (base64Data: string): string => {
   }
 };
 
-export const list = async (search?: string) => {
+export const list = async (empresaId: number, search?: string) => {
   const db = await getDb();
   if (!db) return [];
 
@@ -49,14 +49,19 @@ export const list = async (search?: string) => {
     return db
       .select()
       .from(clientes)
-      .where(or(like(clientes.nome, `%${search}%`), like(clientes.cpfCnpj, `%${search}%`)))
+      .where(
+        and(
+          eq(clientes.empresaId, empresaId),
+          or(like(clientes.nome, `%${search}%`), like(clientes.cpfCnpj, `%${search}%`))
+        )
+      )
       .orderBy(desc(clientes.id));
   }
 
-  return db.select().from(clientes).orderBy(desc(clientes.id));
+  return db.select().from(clientes).where(eq(clientes.empresaId, empresaId)).orderBy(desc(clientes.id));
 };
 
-export const create = async (data: any) => {
+export const create = async (empresaId: number, data: any) => {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -66,6 +71,7 @@ export const create = async (data: any) => {
   }
 
   return db.insert(clientes).values({
+    empresaId,
     nome: data.nome,
     cpfCnpj: data.cpfCnpj,
     email: data.email,
@@ -86,7 +92,7 @@ const deleteImage = (relativePath: string) => {
   }
 };
 
-export const update = async (id: number, data: any) => {
+export const update = async (empresaId: number, id: number, data: any) => {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -96,7 +102,10 @@ export const update = async (id: number, data: any) => {
 
   if (data.foto) {
     // Fetch existing client to get old photo path
-    const [existingClient] = await db.select().from(clientes).where(eq(clientes.id, id));
+    const [existingClient] = await db
+      .select()
+      .from(clientes)
+      .where(and(eq(clientes.id, id), eq(clientes.empresaId, empresaId)));
     
     if (existingClient?.fotoCaminho) {
       deleteImage(existingClient.fotoCaminho);
@@ -105,21 +114,29 @@ export const update = async (id: number, data: any) => {
     updateData.fotoCaminho = saveImage(data.foto);
   }
 
-  await db.update(clientes).set(updateData).where(eq(clientes.id, id));
+  await db
+    .update(clientes)
+    .set(updateData)
+    .where(and(eq(clientes.id, id), eq(clientes.empresaId, empresaId)));
   return { success: true };
 };
 
-export const remove = async (id: number) => {
+export const remove = async (empresaId: number, id: number) => {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
   // Fetch existing client to get photo path
-  const [existingClient] = await db.select().from(clientes).where(eq(clientes.id, id));
+  const [existingClient] = await db
+    .select()
+    .from(clientes)
+    .where(and(eq(clientes.id, id), eq(clientes.empresaId, empresaId)));
 
   if (existingClient?.fotoCaminho) {
     deleteImage(existingClient.fotoCaminho);
   }
 
-  await db.delete(clientes).where(eq(clientes.id, id));
+  await db
+    .delete(clientes)
+    .where(and(eq(clientes.id, id), eq(clientes.empresaId, empresaId)));
   return { success: true };
 };

@@ -1,9 +1,9 @@
-import { eq, desc, inArray } from "drizzle-orm";
+import { eq, desc, inArray, and } from "drizzle-orm";
 import { getDb } from "../libs/db";
 import { movimentacoesEstoque, produtos, users } from "../../drizzle/schema";
 import { CreateKardexInput } from "../models/kardex.model";
 
-export async function listByProduto(produtoId: number) {
+export async function listByProduto(empresaId: number, produtoId: number) {
   const db = await getDb();
   if (!db) return [];
   return db
@@ -26,17 +26,17 @@ export async function listByProduto(produtoId: number) {
     })
     .from(movimentacoesEstoque)
     .leftJoin(users, eq(movimentacoesEstoque.usuarioId, users.id))
-    .where(eq(movimentacoesEstoque.produtoId, produtoId))
+    .where(and(eq(movimentacoesEstoque.produtoId, produtoId), eq(movimentacoesEstoque.empresaId, empresaId)))
     .orderBy(desc(movimentacoesEstoque.createdAt));
 }
 
-export async function getAll() {
+export async function getAll(empresaId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(movimentacoesEstoque).orderBy(desc(movimentacoesEstoque.createdAt));
+  return db.select().from(movimentacoesEstoque).where(eq(movimentacoesEstoque.empresaId, empresaId)).orderBy(desc(movimentacoesEstoque.createdAt));
 }
 
-export async function create(data: CreateKardexInput, usuarioId: number) {
+export async function create(empresaId: number, data: CreateKardexInput, usuarioId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -46,6 +46,7 @@ export async function create(data: CreateKardexInput, usuarioId: number) {
   // Inserir movimentação no Kardex
   const [result] = await db.insert(movimentacoesEstoque).values({
     ...data,
+    empresaId,
     usuarioId,
     statusConferencia,
   });
@@ -53,7 +54,7 @@ export async function create(data: CreateKardexInput, usuarioId: number) {
   // Atualizar estoque do produto SOMENTE se NÃO for PENDENTE_CONFERENCIA
   // Quando for PENDENTE_CONFERENCIA, o estoque será atualizado após a conferência
   if (statusConferencia !== "PENDENTE_CONFERENCIA" && data.saldoAtual !== undefined && data.produtoId) {
-    await db.update(produtos).set({ estoque: data.saldoAtual }).where(eq(produtos.id, data.produtoId));
+    await db.update(produtos).set({ estoque: data.saldoAtual }).where(and(eq(produtos.id, data.produtoId), eq(produtos.empresaId, empresaId)));
   }
 
   // Se for ENTRADA_NFE, atualizar data e quantidade da última compra no produto
@@ -65,13 +66,13 @@ export async function create(data: CreateKardexInput, usuarioId: number) {
         dataUltimaCompra: new Date(),
         quantidadeUltimaCompra: data.quantidade,
       })
-      .where(eq(produtos.id, data.produtoId));
+      .where(and(eq(produtos.id, data.produtoId), eq(produtos.empresaId, empresaId)));
   }
 
   return result;
 }
 
-export async function deleteByDocumento(documento: string) {
+export async function deleteByDocumento(empresaId: number, documento: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -79,32 +80,31 @@ export async function deleteByDocumento(documento: string) {
   const movs = await db
     .select()
     .from(movimentacoesEstoque)
-    .where(eq(movimentacoesEstoque.documentoReferencia, documento));
+    .where(and(eq(movimentacoesEstoque.documentoReferencia, documento), eq(movimentacoesEstoque.empresaId, empresaId)));
 
   for (const mov of movs) {
     // Se o status NÃO for PENDENTE_CONFERENCIA, significa que o estoque foi atualizado
     // Então precisamos reverter (subtrair a quantidade da entrada)
     if (mov.statusConferencia !== "PENDENTE_CONFERENCIA" && mov.tipo === "ENTRADA_NFE") {
-      const [produto] = await db.select().from(produtos).where(eq(produtos.id, mov.produtoId));
+      const [produto] = await db.select().from(produtos).where(and(eq(produtos.id, mov.produtoId), eq(produtos.empresaId, empresaId)));
 
       if (produto) {
         await db
           .update(produtos)
           .set({ estoque: produto.estoque - mov.quantidade })
-          .where(eq(produtos.id, mov.produtoId));
+          .where(and(eq(produtos.id, mov.produtoId), eq(produtos.empresaId, empresaId)));
       }
     }
   }
 
-  // Deletar as movimentações
   await db
     .delete(movimentacoesEstoque)
-    .where(eq(movimentacoesEstoque.documentoReferencia, documento));
+    .where(and(eq(movimentacoesEstoque.documentoReferencia, documento), eq(movimentacoesEstoque.empresaId, empresaId)));
 
   return { success: true };
 }
 
-export async function deleteBatch(ids: number[]) {
+export async function deleteBatch(empresaId: number, ids: number[]) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -112,27 +112,26 @@ export async function deleteBatch(ids: number[]) {
   const movs = await db
     .select()
     .from(movimentacoesEstoque)
-    .where(inArray(movimentacoesEstoque.id, ids));
+    .where(and(inArray(movimentacoesEstoque.id, ids), eq(movimentacoesEstoque.empresaId, empresaId)));
 
   for (const mov of movs) {
     // Se o status NÃO for PENDENTE_CONFERENCIA, significa que o estoque foi atualizado
     // Então precisamos reverter (subtrair a quantidade da entrada)
     if (mov.statusConferencia !== "PENDENTE_CONFERENCIA" && mov.tipo === "ENTRADA_NFE") {
-      const [produto] = await db.select().from(produtos).where(eq(produtos.id, mov.produtoId));
+      const [produto] = await db.select().from(produtos).where(and(eq(produtos.id, mov.produtoId), eq(produtos.empresaId, empresaId)));
 
       if (produto) {
         await db
           .update(produtos)
           .set({ estoque: produto.estoque - mov.quantidade })
-          .where(eq(produtos.id, mov.produtoId));
+          .where(and(eq(produtos.id, mov.produtoId), eq(produtos.empresaId, empresaId)));
       }
     }
   }
 
-  // Deletar as movimentações
   await db
     .delete(movimentacoesEstoque)
-    .where(inArray(movimentacoesEstoque.id, ids));
+    .where(and(inArray(movimentacoesEstoque.id, ids), eq(movimentacoesEstoque.empresaId, empresaId)));
 
   return { success: true };
 }

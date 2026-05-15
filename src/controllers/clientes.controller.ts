@@ -7,7 +7,7 @@ import { createClienteSchema, updateClienteSchema } from "../zod";
 export const list = async (req: Request, res: Response) => {
   try {
     const search = req.query.search as string | undefined;
-    const result = await clientesModule.list(search);
+    const result = await clientesModule.list(req.empresaId!, search);
     res.json(result);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -17,7 +17,7 @@ export const list = async (req: Request, res: Response) => {
 export const create = async (req: Request, res: Response) => {
   try {
     const data = createClienteSchema.parse(req.body);
-    const result = await clientesModule.create(data);
+    const result = await clientesModule.create(req.empresaId!, data);
     res.json(result);
   } catch (error: any) {
     if (error instanceof ZodError) {
@@ -32,7 +32,7 @@ export const update = async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id);
     const data = updateClienteSchema.parse(req.body);
-    const result = await clientesModule.update(id, data);
+    const result = await clientesModule.update(req.empresaId!, id, data);
     res.json(result);
   } catch (error: any) {
     if (error instanceof ZodError) {
@@ -46,7 +46,7 @@ export const update = async (req: Request, res: Response) => {
 export const remove = async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id);
-    await clientesModule.remove(id);
+    await clientesModule.remove(req.empresaId!, id);
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

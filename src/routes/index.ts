@@ -20,10 +20,19 @@ import recipesRouter from "./recipes.routes";
 import productionRouter from "./production.routes";
 import { returnsRouter } from "./returns.routes";
 import { analyticsRouter } from "./analytics.routes";
+import { empresasRouter } from "./empresas.routes";
+
+import { authenticate } from "../middleware/auth.middleware";
+import { requireTenant } from "../middleware/tenant.middleware";
 
 export const appRouter = Router();
 
 appRouter.use("/auth", authRouter);
+appRouter.use("/empresas", empresasRouter); // Inclui ativação de PDV e admin de tenants
+
+// Proteger todas as rotas abaixo com autenticação e contexto de empresa
+appRouter.use(authenticate);
+appRouter.use(requireTenant);
 appRouter.use("/users", usersRouter);
 appRouter.use("/clientes", clientesRouter);
 appRouter.use("/produtos", produtosRouter);

@@ -22,7 +22,7 @@ import { randomUUID } from "crypto";
 /**
  * Lista todas as vendas com seus itens e filtros
  */
-export async function list(filters?: {
+export async function list(empresaId: number, filters?: {
   dataInicio?: string;
   dataFim?: string;
   codigoBarras?: string;
@@ -53,7 +53,7 @@ export async function list(filters?: {
     .leftJoin(users, eq(vendas.operadorId, users.id))
     .$dynamic();
 
-  const conditions = [];
+  const conditions = [eq(vendas.empresaId, empresaId)];
 
   if (filters?.dataInicio) {
     const start = `${filters.dataInicio} 00:00:00`;
@@ -78,7 +78,7 @@ export async function list(filters?: {
       .innerJoin(produtos, eq(itensVenda.produtoId, produtos.id))
       .$dynamic();
 
-    const subConditions = [];
+    const subConditions = [eq(produtos.empresaId, empresaId)];
     if (filters.codigoBarras) {
       subConditions.push(eq(produtos.codigoBarras, filters.codigoBarras));
     }
@@ -142,16 +142,16 @@ export async function list(filters?: {
  * - Cria movimentações de estoque
  * - Registra movimentação de caixa
  */
-export async function create(data: CreateVendaInput, usuarioId: number): Promise<any> {
+export async function create(empresaId: number, data: CreateVendaInput, usuarioId: number): Promise<any> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
   // Validar estoque de todos os produtos
   for (const item of data.itens) {
-    const temEstoque = await produtoService.checkEstoque(item.produtoId, item.quantidade);
+    const temEstoque = await produtoService.checkEstoque(empresaId, item.produtoId, item.quantidade);
 
     if (!temEstoque) {
-      const produto = await produtoService.getById(item.produtoId);
+      const produto = await produtoService.getById(empresaId, item.produtoId);
       throw new Error(`Estoque insuficiente para ${produto?.descricao}. Disponível: ${produto?.estoque}`);
     }
   }
@@ -171,6 +171,7 @@ export async function create(data: CreateVendaInput, usuarioId: number): Promise
 
   // Criar venda
   const [vendaResult] = await db.insert(vendas).values({
+    empresaId,
     uuid: randomUUID(),
     numeroVenda,
     dataVenda: new Date(),
@@ -187,7 +188,7 @@ export async function create(data: CreateVendaInput, usuarioId: number): Promise
 
   // Criar itens da venda e movimentar estoque
   for (const item of data.itens) {
-    const produto = await produtoService.getById(item.produtoId);
+    const produto = await produtoService.getById(empresaId, item.produtoId);
     if (!produto) continue;
 
     const valorTotalItem = item.quantidade * item.precoUnitario;
@@ -195,6 +196,7 @@ export async function create(data: CreateVendaInput, usuarioId: number): Promise
 
     // Criar item da venda
     await db.insert(itensVenda).values({
+      empresaId,
       vendaId,
       produtoId: item.produtoId,
       quantidade: item.quantidade,
@@ -208,6 +210,7 @@ export async function create(data: CreateVendaInput, usuarioId: number): Promise
     const saldoAtual = saldoAnterior - item.quantidade;
 
     await db.insert(movimentacoesEstoque).values({
+      empresaId,
       produtoId: item.produtoId,
       tipo: "VENDA_PDV",
       quantidade: -item.quantidade, // Negativo para saída
@@ -219,12 +222,13 @@ export async function create(data: CreateVendaInput, usuarioId: number): Promise
     });
 
     // Atualizar estoque do produto
-    await db.update(produtos).set({ estoque: saldoAtual }).where(eq(produtos.id, item.produtoId));
+    await db.update(produtos).set({ estoque: saldoAtual }).where(and(eq(produtos.id, item.produtoId), eq(produtos.empresaId, empresaId)));
   }
 
   // Registrar movimentação de caixa (entrada via ABERTURA)
   // TODO: Usar tipo correto para entrada de venda quando disponível no enum
   await db.insert(movimentacoesCaixa).values({
+    empresaId,
     tipo: "ABERTURA", // Temporário, ideal seria VENDA ou ENTRADA
     valor: valorLiquido,
     dataMovimento: new Date(),
@@ -249,7 +253,7 @@ export async function create(data: CreateVendaInput, usuarioId: number): Promise
 /**
  * Busca vendas por período
  */
-export async function getByPeriodo(dataInicio: string, dataFim: string): Promise<any[]> {
+export async function getByPeriodo(empresaId: number, dataInicio: string, dataFim: string): Promise<any[]> {
   const db = await getDb();
   if (!db) return [];
 
@@ -272,7 +276,10 @@ export async function getByPeriodo(dataInicio: string, dataFim: string): Promise
     .select()
     .from(vendas)
     .where(
-      sql`${vendas.dataVenda} >= ${start} AND ${vendas.dataVenda} <= ${end}`
+      and(
+        eq(vendas.empresaId, empresaId),
+        sql`${vendas.dataVenda} >= ${start} AND ${vendas.dataVenda} <= ${end}`
+      )
     )
     .orderBy(desc(vendas.dataVenda));
 
@@ -307,8 +314,8 @@ export async function getByPeriodo(dataInicio: string, dataFim: string): Promise
 /**
  * Calcula total de vendas do dia
  */
-export async function totalVendasHoje(): Promise<number> {
-  const vendas = await list();
+export async function totalVendasHoje(empresaId: number): Promise<number> {
+  const vendas = await list(empresaId);
   const hoje = new Date().toDateString();
 
   return vendas.filter((v) => new Date(v.dataVenda).toDateString() === hoje).reduce((total, v) => total + v.valorLiquido, 0);
@@ -316,7 +323,7 @@ export async function totalVendasHoje(): Promise<number> {
 /**
  * Busca vendas por produto
  */
-export async function getByProduto(produtoId: number): Promise<any[]> {
+export async function getByProduto(empresaId: number, produtoId: number): Promise<any[]> {
   const db = await getDb();
   if (!db) return [];
 
@@ -331,14 +338,14 @@ export async function getByProduto(produtoId: number): Promise<any[]> {
     })
     .from(itensVenda)
     .innerJoin(vendas, eq(itensVenda.vendaId, vendas.id))
-    .where(eq(itensVenda.produtoId, produtoId))
+    .where(and(eq(itensVenda.produtoId, produtoId), eq(vendas.empresaId, empresaId)))
     .orderBy(desc(vendas.dataVenda));
 }
 
 /**
  * Busca venda por ID ou Número
  */
-export async function getById(idOrNumber: string | number): Promise<any | null> {
+export async function getById(empresaId: number, idOrNumber: string | number): Promise<any | null> {
   const db = await getDb();
   if (!db) return null;
 
@@ -366,8 +373,8 @@ export async function getById(idOrNumber: string | number): Promise<any | null> 
 
   // @ts-ignore
   const whereClause = isId 
-    ? eq(vendas.id, Number(idOrNumber))
-    : eq(vendas.numeroVenda, String(idOrNumber));
+    ? and(eq(vendas.id, Number(idOrNumber)), eq(vendas.empresaId, empresaId))
+    : and(eq(vendas.numeroVenda, String(idOrNumber)), eq(vendas.empresaId, empresaId));
 
   const vendaResult = await query.where(whereClause).limit(1);
   const venda = vendaResult[0];
