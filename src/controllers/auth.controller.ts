@@ -6,8 +6,8 @@ import { loginSchema, registerSchema } from "../zod/auth.schema";
 
 export const login = async (req: Request, res: Response) => {
   try {
-    const { email, password, codigoEmpresa } = loginSchema.parse(req.body);
-    const result = await authService.login(email, password, codigoEmpresa);
+    const { identifier, password, codigoEmpresa } = loginSchema.parse(req.body);
+    const result = await authService.login(identifier, password, codigoEmpresa);
     res.json({ success: true, ...result });
   } catch (error: any) {
     if (error instanceof ZodError) {

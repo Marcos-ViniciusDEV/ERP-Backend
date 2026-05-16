@@ -194,15 +194,22 @@ export async function validateCompany(cnpj: string, senhaAcesso: string) {
 }
 
 /**
- * Realiza login com email, senha e código da empresa.
+ * Realiza login com identifier (id ou email), senha e código da empresa.
  * O codigoEmpresa é obrigatório para usuários normais.
  * Super admins (role=super_admin) não precisam informar empresa.
  */
-export async function login(email: string, password: string, codigoEmpresa?: string) {
+export async function login(identifier: string, password: string, codigoEmpresa?: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const userResult = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  // Busca por ID (numérico) ou email
+  const isNumericId = /^\d+$/.test(identifier);
+  let userResult;
+  if (isNumericId) {
+    userResult = await db.select().from(users).where(eq(users.id, parseInt(identifier))).limit(1);
+  } else {
+    userResult = await db.select().from(users).where(eq(users.email, identifier)).limit(1);
+  }
   const user = userResult[0];
 
   if (!user || !user.password) {
