@@ -16,5 +16,9 @@ usersRouter.post("/", usersController.createUser);
 // Atualizar usuário
 usersRouter.put("/:id", usersController.updateUser);
 
+// Alterar senha do usuário
+usersRouter.put("/:id/password", usersController.updatePassword);
+
 // Deletar usuário
 usersRouter.delete("/:id", usersController.deleteUser);
+

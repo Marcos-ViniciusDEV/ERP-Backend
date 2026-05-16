@@ -11,9 +11,10 @@ import * as pdvWebSocketService from "../services/pdv-websocket.service";
  * GET /api/pdv/carga-inicial
  * Retorna produtos, usuários e formas de pagamento para o PDV
  */
-export async function cargaInicial(_req: Request, res: Response) {
+export async function cargaInicial(req: Request, res: Response) {
   try {
-    const dados = await pdvService.getCargaInicial();
+    const empresaId = (req as any).user?.empresaId || (req as any).pdv?.empresaId || 1;
+    const dados = await pdvService.getCargaInicial(empresaId);
     res.json({
       success: true,
       data: dados,
@@ -38,11 +39,12 @@ export async function sincronizar(req: Request, res: Response) {
     const dadosValidados = sincronizarPDVSchema.parse(req.body);
 
     // Processar sincronização
-    const resultado = await pdvService.sincronizar(dadosValidados);
+    const empresaId = (req as any).user?.empresaId || (req as any).pdv?.empresaId || 1;
+    const resultado = await pdvService.sincronizar(empresaId, dadosValidados);
 
     // Se houve processamento com sucesso, transmitir atualização de estoque para todos os PDVs
     if (resultado.vendasProcessadas > 0 || resultado.movimentosProcessados > 0) {
-      const dadosAtualizados = await pdvService.getCargaInicial();
+      const dadosAtualizados = await pdvService.getCargaInicial(empresaId);
       pdvWebSocketService.broadcastCatalog(dadosAtualizados);
     }
 
@@ -100,7 +102,8 @@ export async function enviarCarga(req: Request, res: Response) {
     const { pdvIds } = req.body; // Array de IDs ou undefined para todos
 
     // Buscar carga inicial (isso também atualiza os preços PDV no banco)
-    const dados = await pdvService.getCargaInicial();
+    const empresaId = (req as any).user?.empresaId || (req as any).pdv?.empresaId || 1;
+    const dados = await pdvService.getCargaInicial(empresaId);
 
     let sent = 0;
     if (pdvIds && Array.isArray(pdvIds)) {
@@ -146,7 +149,8 @@ export async function listMovements(req: Request, res: Response) {
       operadorId: operadorId ? Number(operadorId) : undefined,
     };
 
-    const movimentos = await pdvService.listMovements(filters);
+    const empresaId = (req as any).user?.empresaId || 1;
+    const movimentos = await pdvService.listMovements(empresaId, filters);
     
     res.json({
       success: true,

@@ -15,7 +15,7 @@ const clients: Map<string, PDVClient> = new Map();
 export function initialize(server: Server) {
   wss = new WebSocketServer({ server, path: '/pdv-ws' });
   
-  wss.on('connection', (ws: WebSocket, req) => {
+  wss.on('connection', (ws: WebSocket, _req) => {
     console.log('New PDV connection');
     
     ws.on('message', (message: string) => {

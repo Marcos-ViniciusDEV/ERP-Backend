@@ -1,6 +1,9 @@
 import { Request, Response } from "express";
 import * as authService from "../services/auth.service";
 import { ZodError } from "zod";
+import { getDb } from "../libs/db";
+import { empresas } from "../../drizzle/schema";
+import { eq } from "drizzle-orm";
 
 import { loginSchema, registerSchema } from "../zod/auth.schema";
 
@@ -46,5 +49,17 @@ export const register = async (req: Request, res: Response) => {
 };
 
 export const me = async (req: Request, res: Response) => {
-  res.json(req.user);
+  const user = req.user;
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+  
+  let empresa = null;
+  if (user.empresaId) {
+    const db = await getDb();
+    if (db) {
+      const result = await db.select().from(empresas).where(eq(empresas.id, user.empresaId)).limit(1);
+      empresa = result[0] || null;
+    }
+  }
+
+  res.json({ ...user, empresa });
 };

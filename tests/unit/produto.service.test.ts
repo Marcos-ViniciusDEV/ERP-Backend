@@ -61,7 +61,7 @@ describe("ProdutoService", () => {
       const mockProdutos = [{ id: 1, nome: "Produto 1" }];
       mockDb.from.mockResolvedValue(mockProdutos);
 
-      const result = await produtoService.list();
+      const result = await produtoService.list(1);
 
       expect(result).toEqual(mockProdutos);
       expect(mockDb.select).toHaveBeenCalled();
@@ -107,14 +107,14 @@ describe("ProdutoService", () => {
     it("should return true if stock is sufficient", async () => {
       mockDb.limit.mockResolvedValue([{ id: 1, estoque: 10 }]);
 
-      const result = await produtoService.checkEstoque(1, 5);
+      const result = await produtoService.checkEstoque(1, 1, 5);
       expect(result).toBe(true);
     });
 
     it("should return false if stock is insufficient", async () => {
       mockDb.limit.mockResolvedValue([{ id: 1, estoque: 4 }]);
 
-      const result = await produtoService.checkEstoque(1, 5);
+      const result = await produtoService.checkEstoque(1, 1, 5);
       expect(result).toBe(false);
     });
   });

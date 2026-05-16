@@ -13,13 +13,13 @@ import type { VendaPDV, MovimentoCaixaPDV } from "../zod/pdv.schema";
 /**
  * Retorna dados para carga inicial do PDV
  */
-export async function getCargaInicial() {
+export async function getCargaInicial(empresaId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
   // Atualizar precoPdv para igualar ao precoVenda, pois estamos enviando a carga agora
   // Isso confirma que o PDV recebeu (ou está recebendo) os novos preços
-  await db.execute(sql`UPDATE produtos SET precoPdv = precoVenda WHERE ativo = 1`);
+  await db.execute(sql`UPDATE produtos SET precoPdv = precoVenda WHERE ativo = 1 AND empresaId = ${empresaId}`);
 
 
   // Buscar produtos ativos
@@ -34,7 +34,7 @@ export async function getCargaInicial() {
       estoque: produtos.estoque,
     })
     .from(produtos)
-    .where(eq(produtos.ativo, true));
+    .where(and(eq(produtos.ativo, true), eq(produtos.empresaId, empresaId)));
 
   // Buscar usuários ativos (apenas operadores e admins)
   const usuariosAtivos = await db
@@ -45,7 +45,8 @@ export async function getCargaInicial() {
       password: users.password,
       role: users.role,
     })
-    .from(users);
+    .from(users)
+    .where(eq(users.empresaId, empresaId));
 
   // Formatar usuários com hash de senha
   const usuariosFormatados = usuariosAtivos.map((u: any) => ({
@@ -72,7 +73,7 @@ export async function getCargaInicial() {
  * Processa sincronização de vendas e movimentos do PDV
  * Implementa idempotência por numeroVenda único
  */
-export async function sincronizar(data: {
+export async function sincronizar(empresaId: number, data: {
   vendas: VendaPDV[];
   movimentosCaixa: MovimentoCaixaPDV[];
 }) {
@@ -105,6 +106,7 @@ export async function sincronizar(data: {
       const [vendaInserida] = await db
         .insert(vendas)
         .values({
+          empresaId,
           uuid: venda.uuid,
           numeroVenda: venda.numeroVenda,
           ccf: venda.ccf,
@@ -150,6 +152,7 @@ export async function sincronizar(data: {
 
           // Registrar movimentação de estoque
           await db.insert(movimentacoesEstoque).values({
+            empresaId,
             produtoId: item.produtoId,
             tipo: "VENDA_PDV",
             quantidade: -item.quantidade,
@@ -203,6 +206,7 @@ export async function sincronizar(data: {
       }
 
       await db.insert(movimentacoesCaixa).values({
+        empresaId,
         tipo: movimento.tipo,
         valor: movimento.valor,
         dataMovimento: new Date(movimento.dataMovimento),
@@ -225,7 +229,7 @@ export async function sincronizar(data: {
 /**
  * Lista movimentações de caixa com filtros
  */
-export async function listMovements(filters?: {
+export async function listMovements(empresaId: number, filters?: {
   pdvId?: string;
   operadorId?: number;
   tipo?: string;
@@ -235,7 +239,7 @@ export async function listMovements(filters?: {
   const db = await getDb();
   if (!db) return [];
 
-  const conditions = [];
+  const conditions = [eq(movimentacoesCaixa.empresaId, empresaId)];
   if (filters?.pdvId) conditions.push(eq(movimentacoesCaixa.pdvId, filters.pdvId));
   if (filters?.operadorId)
     conditions.push(eq(movimentacoesCaixa.operadorId, filters.operadorId));

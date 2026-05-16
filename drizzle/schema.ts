@@ -6,7 +6,6 @@ import {
   mysqlEnum,
   text,
   boolean,
-  decimal,
   foreignKey
 } from "drizzle-orm/mysql-core";
 
@@ -20,7 +19,10 @@ export const empresas = mysqlTable("empresas", {
   cnpj: varchar("cnpj", { length: 18 }).notNull().unique(),
   codigoAcesso: varchar("codigoAcesso", { length: 20 }).notNull().unique(), // ex: "LOJA-X123"
   senhaAtivacao: text("senhaAtivacao").notNull(), // Hash da senha para ativar PDVs
-  plano: mysqlEnum("plano", ["BASICO", "PRO", "ENTERPRISE"]).default("BASICO").notNull(),
+  plano: mysqlEnum("plano", ["BASICO", "PRO", "ENTERPRISE", "TRIAL", "STARTER", "PROFESSIONAL"]).default("TRIAL").notNull(),
+  tipoVarejo: varchar("tipoVarejo", { length: 100 }),
+  faturamentoMensal: varchar("faturamentoMensal", { length: 50 }),
+  vendedores: int("vendedores").default(0),
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -55,6 +57,7 @@ export const users = mysqlTable("users", {
   name: text("name"),
   email: varchar("email", { length: 320 }).notNull().unique(),
   password: text("password"), // Hash da senha (salt:hash) - opcional para OAuth users
+  fotoCaminho: varchar("fotoCaminho", { length: 255 }), // Avatar do usuário
   supervisorPassword: text("supervisorPassword"), // Senha do supervisor para liberações
   loginMethod: varchar("loginMethod", { length: 64 })
     .default("local")

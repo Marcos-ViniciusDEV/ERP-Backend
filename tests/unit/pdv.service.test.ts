@@ -89,7 +89,7 @@ describe("PDVService", () => {
         .mockReturnValueOnce(mockDb)
         .mockResolvedValueOnce(mockUsers);
 
-      const result = await pdvService.getCargaInicial();
+      const result = await pdvService.getCargaInicial(1);
 
       expect(result).toHaveProperty("produtos");
       expect(result).toHaveProperty("usuarios");

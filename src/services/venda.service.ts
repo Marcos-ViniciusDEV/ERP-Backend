@@ -196,7 +196,6 @@ export async function create(empresaId: number, data: CreateVendaInput, usuarioI
 
     // Criar item da venda
     await db.insert(itensVenda).values({
-      empresaId,
       vendaId,
       produtoId: item.produtoId,
       quantidade: item.quantidade,

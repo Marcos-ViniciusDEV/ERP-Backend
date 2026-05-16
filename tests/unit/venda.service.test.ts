@@ -125,7 +125,7 @@ describe("VendaService", () => {
       mockDb.orderBy.mockResolvedValueOnce(mockVendas);
       mockDb.where.mockResolvedValue(mockItens);
 
-      const result = await vendaService.list();
+      const result = await vendaService.list(1);
 
       expect(result).toHaveLength(1);
       expect(result[0]).toHaveProperty("itens");

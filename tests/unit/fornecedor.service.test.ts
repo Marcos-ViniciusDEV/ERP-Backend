@@ -74,7 +74,7 @@ describe("FornecedorService", () => {
       const input = { nome: "Fornecedor Atualizado" };
       mockDb.where.mockResolvedValue({ affectedRows: 1 });
 
-      await fornecedorService.update(1, input);
+      await fornecedorService.update(1, 1, input);
 
       expect(mockDb.update).toHaveBeenCalled();
       expect(mockDb.set).toHaveBeenCalledWith(input);

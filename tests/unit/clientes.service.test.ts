@@ -67,7 +67,7 @@ describe("ClientesService", () => {
       const mockClientes = [{ id: 1, nome: "Cliente 1" }];
       mockDb.orderBy.mockResolvedValue(mockClientes);
 
-      const result = await clientesService.list();
+      const result = await clientesService.list(1);
 
       expect(result).toEqual(mockClientes);
       expect(mockDb.select).toHaveBeenCalled();
@@ -78,7 +78,7 @@ describe("ClientesService", () => {
       const mockClientes = [{ id: 1, nome: "Cliente 1" }];
       mockDb.orderBy.mockResolvedValue(mockClientes);
 
-      await clientesService.list("search");
+      await clientesService.list(1, "search");
 
       expect(mockDb.where).toHaveBeenCalled();
     });
@@ -89,7 +89,7 @@ describe("ClientesService", () => {
       const input = { nome: "Cliente 1" };
       mockDb.values.mockResolvedValue([{ insertId: 1 }]);
 
-      await clientesService.create(input);
+      await clientesService.create(1, input);
 
       expect(mockDb.insert).toHaveBeenCalled();
       expect(mockDb.values).toHaveBeenCalledWith(expect.objectContaining({
@@ -105,7 +105,7 @@ describe("ClientesService", () => {
       };
       mockDb.values.mockResolvedValue([{ insertId: 1 }]);
 
-      await clientesService.create(input);
+      await clientesService.create(1, input);
 
       expect(fs.writeFileSync).toHaveBeenCalled();
       expect(mockDb.values).toHaveBeenCalledWith(expect.objectContaining({
@@ -120,7 +120,7 @@ describe("ClientesService", () => {
       // set() returns mockDb (default), where() returns result
       mockDb.where.mockResolvedValue({ affectedRows: 1 });
 
-      await clientesService.update(1, input);
+      await clientesService.update(1, 1, input);
 
       expect(mockDb.update).toHaveBeenCalled();
       expect(mockDb.set).toHaveBeenCalledWith(expect.objectContaining({
@@ -140,7 +140,7 @@ describe("ClientesService", () => {
         .mockResolvedValueOnce([{ id: 1, fotoCaminho: "/old/path.png" }])
         .mockResolvedValueOnce({ affectedRows: 1 });
 
-      await clientesService.update(1, input);
+      await clientesService.update(1, 1, input);
 
       expect(fs.unlinkSync).toHaveBeenCalled();
       expect(fs.writeFileSync).toHaveBeenCalled();
@@ -156,7 +156,7 @@ describe("ClientesService", () => {
       mockDb.delete.mockReturnValue(mockDb);
       mockDb.where.mockResolvedValueOnce({ affectedRows: 1 }); // Delete result
 
-      await clientesService.remove(1);
+      await clientesService.remove(1, 1);
 
       expect(fs.unlinkSync).toHaveBeenCalled();
       expect(mockDb.delete).toHaveBeenCalled();

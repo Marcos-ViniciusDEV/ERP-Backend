@@ -1,12 +1,12 @@
 import { getDb } from "../libs/db";
 import { salesGoals, vendas, itensVenda, produtos } from "../../drizzle/schema";
-import { eq, and, sql, desc, sum } from "drizzle-orm";
+import { eq, and, sql, desc } from "drizzle-orm";
 
 /**
  * Calcula a Curva ABC de produtos
  * Baseado no volume de vendas (valor total)
  */
-export async function calculateABC(startDate?: string, endDate?: string) {
+export async function calculateABC(empresaId: number, startDate?: string, endDate?: string) {
   const db = await getDb();
   if (!db) return [];
 
@@ -27,6 +27,7 @@ export async function calculateABC(startDate?: string, endDate?: string) {
     .where(
       and(
         eq(vendas.status, 'CONCLUIDA'),
+        eq(vendas.empresaId, empresaId),
         sql`${vendas.dataVenda} >= ${start}`,
         sql`${vendas.dataVenda} <= ${end}`
       )
@@ -60,7 +61,7 @@ export async function calculateABC(startDate?: string, endDate?: string) {
 /**
  * Define ou atualiza meta de vendas
  */
-export async function upsertSalesGoal(month: number, year: number, targetAmount: number, sellerId?: number) {
+export async function upsertSalesGoal(empresaId: number, month: number, year: number, targetAmount: number, sellerId?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -68,6 +69,7 @@ export async function upsertSalesGoal(month: number, year: number, targetAmount:
     where: and(
       eq(salesGoals.month, month),
       eq(salesGoals.year, year),
+      eq(salesGoals.empresaId, empresaId),
       sellerId ? eq(salesGoals.sellerId, sellerId) : sql`${salesGoals.sellerId} IS NULL`
     )
   });
@@ -79,6 +81,7 @@ export async function upsertSalesGoal(month: number, year: number, targetAmount:
     return { ...existing, targetAmount };
   } else {
     const [inserted] = await db.insert(salesGoals).values({
+      empresaId,
       month,
       year,
       targetAmount,
@@ -91,7 +94,7 @@ export async function upsertSalesGoal(month: number, year: number, targetAmount:
 /**
  * Busca performance de vendas vs metas
  */
-export async function getSalesPerformance(month: number, year: number) {
+export async function getSalesPerformance(empresaId: number, month: number, year: number) {
   const db = await getDb();
   if (!db) return null;
 
@@ -100,6 +103,7 @@ export async function getSalesPerformance(month: number, year: number) {
     where: and(
       eq(salesGoals.month, month),
       eq(salesGoals.year, year),
+      eq(salesGoals.empresaId, empresaId),
       sql`${salesGoals.sellerId} IS NULL`
     )
   });
@@ -121,6 +125,7 @@ export async function getSalesPerformance(month: number, year: number) {
     .where(
       and(
         eq(vendas.status, 'CONCLUIDA'),
+        eq(vendas.empresaId, empresaId),
         sql`${vendas.dataVenda} >= ${startStr}`,
         sql`${vendas.dataVenda} < ${endStr}`
       )

@@ -5,7 +5,9 @@ import { z } from "zod";
 export async function getABC(req: Request, res: Response) {
   try {
     const { startDate, endDate } = req.query;
+    const empresaId = req.user?.empresaId || 1;
     const result = await analyticsService.calculateABC(
+      empresaId,
       startDate as string,
       endDate as string
     );
@@ -25,7 +27,9 @@ const upsertGoalSchema = z.object({
 export async function upsertGoal(req: Request, res: Response) {
   try {
     const input = upsertGoalSchema.parse(req.body);
+    const empresaId = req.user?.empresaId || 1;
     const result = await analyticsService.upsertSalesGoal(
+      empresaId,
       input.month,
       input.year,
       input.targetAmount,
@@ -42,7 +46,8 @@ export async function getGoalsPerformance(req: Request, res: Response) {
     const month = Number(req.query.month) || new Date().getMonth() + 1;
     const year = Number(req.query.year) || new Date().getFullYear();
 
-    const result = await analyticsService.getSalesPerformance(month, year);
+    const empresaId = req.user?.empresaId || 1;
+    const result = await analyticsService.getSalesPerformance(empresaId, month, year);
     res.json({ success: true, data: result });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });

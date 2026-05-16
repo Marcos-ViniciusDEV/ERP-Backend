@@ -3,7 +3,8 @@ import { eq, and } from "drizzle-orm";
 import { getDb } from "../libs/db";
 import { empresas, pdvsAtivos, users } from "../../drizzle/schema";
 import { createToken } from "../services/auth.service";
-import { verifyPassword } from "../libs/password";
+import { verifyPassword, hashPassword } from "../libs/password";
+import { nanoid } from "nanoid";
 import { authenticate } from "../middleware/auth.middleware";
 import { requireSuperAdmin } from "../middleware/tenant.middleware";
 
@@ -103,6 +104,108 @@ empresasRouter.post("/pdv/ativar", async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("[PDV Ativação] Erro:", error);
     res.status(500).json({ error: error.message ?? "Erro interno" });
+  }
+});
+
+/**
+ * POST /empresas/trial
+ * Registro de nova empresa no plano TRIAL via Landing Page.
+ */
+empresasRouter.post("/trial", async (req: Request, res: Response) => {
+  try {
+    const { name, companyName, cnpj, email, password } = req.body;
+
+    if (!name || !companyName || !cnpj || !email || !password) {
+      res.status(400).json({ error: "Todos os campos são obrigatórios" });
+      return;
+    }
+
+    const db = await getDb();
+    if (!db) throw new Error("Database not available");
+
+    // Verificar se CNPJ ou Email já existem
+    const cnpjExiste = await db.select().from(empresas).where(eq(empresas.cnpj, cnpj)).limit(1);
+    if (cnpjExiste.length > 0) {
+      res.status(400).json({ error: "CNPJ já cadastrado" });
+      return;
+    }
+    const emailExiste = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    if (emailExiste.length > 0) {
+      res.status(400).json({ error: "E-mail já cadastrado" });
+      return;
+    }
+
+    const senhaHash = hashPassword(password);
+    const codigoAcesso = `TRL-${nanoid(6).toUpperCase()}`;
+
+    // 1. Criar Empresa
+    const [empresaResult] = await db.insert(empresas).values({
+      razaoSocial: companyName,
+      nomeFantasia: companyName,
+      cnpj,
+      codigoAcesso,
+      senhaAtivacao: senhaHash,
+      plano: "TRIAL",
+      ativo: true,
+    });
+    const empresaId = empresaResult.insertId;
+
+    // 2. Criar Usuário Admin
+    const [userResult] = await db.insert(users).values({
+      empresaId,
+      name,
+      email,
+      password: senhaHash,
+      openId: `user_${nanoid(10)}`,
+      role: "super_admin",
+    });
+
+    const user = {
+      id: userResult.insertId,
+      empresaId,
+      name,
+      email,
+      role: "super_admin",
+    };
+
+    const token = await createToken(user as any);
+
+    res.status(201).json({
+      success: true,
+      message: "Conta trial criada com sucesso!",
+      token,
+      user,
+    });
+  } catch (error: any) {
+    console.error("[Trial Registration] Erro:", error);
+    res.status(500).json({ error: error.message ?? "Erro interno" });
+  }
+});
+
+/**
+ * PUT /empresas/crm
+ * Atualiza dados de CRM (Qualificação de Lead)
+ */
+empresasRouter.put("/crm", authenticate, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    if (!user || !user.empresaId) {
+      res.status(401).json({ error: "Não autorizado" });
+      return;
+    }
+
+    const { tipoVarejo, faturamentoMensal } = req.body;
+
+    const db = await getDb();
+    if (!db) throw new Error("Database not available");
+
+    await db.update(empresas)
+      .set({ tipoVarejo, faturamentoMensal })
+      .where(eq(empresas.id, user.empresaId));
+
+    res.json({ success: true, message: "Dados atualizados com sucesso" });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 

@@ -104,6 +104,7 @@ export async function createReturn(input: CreateReturnInput) {
             
           // Registrar movimentação de estoque
           await tx.insert(movimentacoesEstoque).values({
+            empresaId: sale.empresaId,
             produtoId: item.produtoId,
             tipo: "DEVOLUCAO",
             quantidade: item.quantidade,
@@ -125,6 +126,7 @@ export async function createReturn(input: CreateReturnInput) {
 
     // Movimentação Financeira (Sangria/Estorno)
     await tx.insert(movimentacoesCaixa).values({
+      empresaId: sale.empresaId,
       tipo: "SANGRIA",
       valor: totalRefunded,
       operadorId: input.operatorId,
