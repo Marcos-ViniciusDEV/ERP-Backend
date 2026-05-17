@@ -157,7 +157,7 @@ empresasRouter.post("/trial", async (req: Request, res: Response) => {
       email,
       password: senhaHash,
       openId: `user_${nanoid(10)}`,
-      role: "super_admin",
+      role: "trakto_admin",
     });
 
     const user = {
@@ -165,7 +165,7 @@ empresasRouter.post("/trial", async (req: Request, res: Response) => {
       empresaId,
       name,
       email,
-      role: "super_admin",
+      role: "trakto_admin",
     };
 
     const token = await createToken(user as any);

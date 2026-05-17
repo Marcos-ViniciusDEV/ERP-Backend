@@ -78,7 +78,7 @@ export const listUsers = async (req: Request, res: Response) => {
     const empresaId = authUser?.empresaId;
 
     if (!empresaId) {
-      if (authUser?.role !== "super_admin") {
+      if (authUser?.role !== "trakto_admin") {
         return res.status(403).json({ error: "Acesso negado: empresaId não definido." });
       }
       const allUsers = await db.select({
@@ -86,6 +86,8 @@ export const listUsers = async (req: Request, res: Response) => {
         name: users.name,
         email: users.email,
         role: users.role,
+        permissions: users.permissions,
+        fotoCaminho: users.fotoCaminho,
         lastSignedIn: users.lastSignedIn,
         createdAt: users.createdAt,
       })
@@ -99,6 +101,8 @@ export const listUsers = async (req: Request, res: Response) => {
       name: users.name,
       email: users.email,
       role: users.role,
+      permissions: users.permissions,
+      fotoCaminho: users.fotoCaminho,
       lastSignedIn: users.lastSignedIn,
       createdAt: users.createdAt,
     })
@@ -121,8 +125,8 @@ export const createUser = async (req: Request, res: Response) => {
     const authUser = (req as any).user;
     const empresaId = authUser?.empresaId;
 
-    // RBAC: Only admin or super_admin can create users
-    if (authUser?.role !== "admin" && authUser?.role !== "super_admin") {
+    // RBAC: Only admin or trakto_admin can create users
+    if (authUser?.role !== "admin" && authUser?.role !== "trakto_admin") {
       return res.status(403).json({ error: "Apenas administradores podem gerenciar usuários do time." });
     }
 
@@ -176,9 +180,11 @@ export const updateUser = async (req: Request, res: Response) => {
 
     const authUser = (req as any).user;
     const empresaId = authUser?.empresaId;
+    const isOwnProfile = authUser?.id === Number(id);
+    const isAdmin = authUser?.role === "admin" || authUser?.role === "trakto_admin";
 
-    // RBAC: Only admin or super_admin can update users
-    if (authUser?.role !== "admin" && authUser?.role !== "super_admin") {
+    // RBAC: Only admin, trakto_admin or own profile can update
+    if (!isOwnProfile && !isAdmin) {
       return res.status(403).json({ error: "Apenas administradores podem gerenciar usuários do time." });
     }
 
@@ -187,17 +193,21 @@ export const updateUser = async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Usuário não encontrado" });
     }
 
-    // Verify tenant bounds
-    if (empresaId && existingUser.empresaId !== empresaId) {
+    // Verify tenant bounds (unless trakto_admin)
+    if (empresaId && existingUser.empresaId !== empresaId && authUser?.role !== "trakto_admin") {
       return res.status(403).json({ error: "Não autorizado a atualizar este usuário de outra empresa." });
     }
 
     const updateData: any = {};
     if (data.name) updateData.name = data.name;
-    if (data.email) updateData.email = data.email;
-    if (data.role) updateData.role = data.role;
-    if (data.password) updateData.password = hashPassword(data.password);
-    if (data.supervisorPassword) updateData.supervisorPassword = hashPassword(data.supervisorPassword);
+    
+    // Apenas admins podem alterar campos administrativos de privilégio e e-mail
+    if (isAdmin) {
+      if (data.email) updateData.email = data.email;
+      if (data.role) updateData.role = data.role;
+      if (data.password) updateData.password = hashPassword(data.password);
+      if (data.supervisorPassword) updateData.supervisorPassword = hashPassword(data.supervisorPassword);
+    }
     
     if (data.foto) {
       if (existingUser.fotoCaminho) {
@@ -234,7 +244,7 @@ export const updatePassword = async (req: Request, res: Response) => {
 
     // Check bounds: either own password or admin from same company
     const isOwnPassword = authUser.id === Number(id);
-    const isAdminOfSameCompany = empresaId && user.empresaId === empresaId && (authUser.role === "admin" || authUser.role === "super_admin");
+    const isAdminOfSameCompany = empresaId && user.empresaId === empresaId && (authUser.role === "admin" || authUser.role === "trakto_admin");
 
     if (!isOwnPassword && !isAdminOfSameCompany) {
       return res.status(403).json({ error: "Não autorizado a alterar a senha deste usuário." });
@@ -265,8 +275,8 @@ export const deleteUser = async (req: Request, res: Response) => {
     const authUser = (req as any).user;
     const empresaId = authUser?.empresaId;
 
-    // RBAC: Only admin or super_admin can delete users
-    if (authUser?.role !== "admin" && authUser?.role !== "super_admin") {
+    // RBAC: Only admin or trakto_admin can delete users
+    if (authUser?.role !== "admin" && authUser?.role !== "trakto_admin") {
       return res.status(403).json({ error: "Apenas administradores podem gerenciar usuários do time." });
     }
 
@@ -281,6 +291,49 @@ export const deleteUser = async (req: Request, res: Response) => {
     }
 
     await db.delete(users).where(eq(users.id, Number(id)));
+
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const updatePermissions = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { permissions } = req.body;
+
+    if (permissions === undefined) {
+      return res.status(400).json({ error: "Permissões não enviadas" });
+    }
+
+    const db = await getDb();
+    if (!db) throw new Error("Database not available");
+
+    const authUser = (req as any).user;
+    const empresaId = authUser?.empresaId;
+
+    // RBAC: Only admin or trakto_admin can update permissions
+    if (authUser?.role !== "admin" && authUser?.role !== "trakto_admin") {
+      return res.status(403).json({ error: "Apenas administradores podem gerenciar permissões." });
+    }
+
+    const [existingUser] = await db.select().from(users).where(eq(users.id, Number(id))).limit(1);
+    if (!existingUser) {
+      return res.status(404).json({ error: "Usuário não encontrado" });
+    }
+
+    // Verify tenant bounds
+    if (empresaId && existingUser.empresaId !== empresaId) {
+      return res.status(403).json({ error: "Não autorizado a atualizar este usuário de outra empresa." });
+    }
+
+    // Save as stringified JSON
+    const permissionsString = typeof permissions === "string" 
+      ? permissions 
+      : JSON.stringify(permissions);
+
+    await db.update(users).set({ permissions: permissionsString }).where(eq(users.id, Number(id)));
 
     res.json({ success: true });
   } catch (error: any) {

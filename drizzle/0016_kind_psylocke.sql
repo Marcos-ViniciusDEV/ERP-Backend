@@ -1,0 +1,2 @@
+ALTER TABLE `empresas` MODIFY COLUMN `plano` enum('BASICO','PRO','ENTERPRISE','TRIAL','STARTER','PROFESSIONAL') NOT NULL DEFAULT 'TRIAL';--> statement-breakpoint
+ALTER TABLE `users` ADD `permissions` text;

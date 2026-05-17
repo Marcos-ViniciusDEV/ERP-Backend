@@ -7,7 +7,7 @@ import { Request, Response, NextFunction } from "express";
  * Extrai o empresaId do usuário autenticado e o disponibiliza em req.empresaId.
  * Garante que nenhuma rota de negócio acesse dados de outra empresa.
  *
- * Exceção: usuários com role "super_admin" (empresaId = null) têm acesso irrestrito.
+ * Exceção: usuários com role "trakto_admin" (empresaId = null) têm acesso irrestrito.
  */
 
 declare global {
@@ -30,8 +30,9 @@ export const requireTenant = (req: Request, res: Response, next: NextFunction) =
     return;
   }
 
-  // Super admin do SaaS pode operar sem empresaId
-  if (user.role === "super_admin") {
+  // Super admin do SaaS pode operar sem empresaId, mas se possuir um (ou default 1) associamos para ver os dados das rotinas
+  if (user.role === "trakto_admin") {
+    req.empresaId = user.empresaId || 1;
     next();
     return;
   }
@@ -49,12 +50,12 @@ export const requireTenant = (req: Request, res: Response, next: NextFunction) =
 
 /**
  * Middleware exclusivo para rotas de Super Admin do SaaS.
- * Bloqueia qualquer usuário que não seja super_admin.
+ * Bloqueia qualquer usuário que não seja trakto_admin.
  */
 export const requireSuperAdmin = (req: Request, res: Response, next: NextFunction) => {
   const user = req.user;
 
-  if (!user || user.role !== "super_admin") {
+  if (!user || user.role !== "trakto_admin") {
     res.status(403).json({ error: "Acesso restrito a administradores do sistema." });
     return;
   }

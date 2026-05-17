@@ -62,9 +62,10 @@ export const users = mysqlTable("users", {
   loginMethod: varchar("loginMethod", { length: 64 })
     .default("local")
     .notNull(),
-  role: mysqlEnum("role", ["user", "admin", "pdv_operator", "super_admin"])
+  role: mysqlEnum("role", ["user", "admin", "pdv_operator", "trakto_admin"])
     .default("user")
     .notNull(),
+  permissions: text("permissions"), // Armazena o JSON string das permissões customizadas
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),

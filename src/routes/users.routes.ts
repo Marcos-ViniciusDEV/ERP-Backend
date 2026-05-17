@@ -24,3 +24,6 @@ usersRouter.put("/:id/password", usersController.updatePassword);
 // Deletar usuário
 usersRouter.delete("/:id", usersController.deleteUser);
 
+// Atualizar permissões do usuário
+usersRouter.put("/:id/permissions", usersController.updatePermissions);
+

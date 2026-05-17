@@ -34,7 +34,7 @@ export type TokenPayload = {
   email: string | null;
   name: string | null;
   role: string;
-  empresaId: number | null; // null = super_admin do SaaS
+  empresaId: number | null; // null = trakto_admin do SaaS
 };
 
 /**
@@ -196,7 +196,7 @@ export async function validateCompany(cnpj: string, senhaAcesso: string) {
 /**
  * Realiza login com identifier (id ou email), senha e código da empresa.
  * O codigoEmpresa é obrigatório para usuários normais.
- * Super admins (role=super_admin) não precisam informar empresa.
+ * Super admins (role=trakto_admin) não precisam informar empresa.
  */
 export async function login(identifier: string, password: string, codigoEmpresa?: string) {
   const db = await getDb();
@@ -221,7 +221,7 @@ export async function login(identifier: string, password: string, codigoEmpresa?
   }
 
   // Super admin não precisa de empresa
-  if (user.role === "super_admin") {
+  if (user.role === "trakto_admin") {
     const token = await createToken(user);
     return { user, token };
   }
