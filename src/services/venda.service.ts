@@ -169,11 +169,28 @@ export async function create(empresaId: number, data: CreateVendaInput, usuarioI
   // Gerar número da venda
   const numeroVenda = `V${Date.now()}`;
 
+  // Buscar última venda para sequenciar CCF e COO
+  const [latestSale] = await db
+    .select({ ccf: vendas.ccf, coo: vendas.coo })
+    .from(vendas)
+    .where(eq(vendas.empresaId, empresaId))
+    .orderBy(desc(vendas.id))
+    .limit(1);
+
+  const nextCcfNum = latestSale?.ccf ? (parseInt(latestSale.ccf, 10) || 0) + 1 : 1;
+  const nextCooNum = latestSale?.coo ? (parseInt(latestSale.coo, 10) || 0) + 1 : 1;
+
+  const ccf = nextCcfNum.toString().padStart(6, "0");
+  const coo = nextCooNum.toString().padStart(6, "0");
+
   // Criar venda
   const [vendaResult] = await db.insert(vendas).values({
     empresaId,
     uuid: randomUUID(),
     numeroVenda,
+    ccf,
+    coo,
+    pdvId: "ONLINE",
     dataVenda: new Date(),
     valorTotal,
     valorDesconto,
@@ -238,6 +255,9 @@ export async function create(empresaId: number, data: CreateVendaInput, usuarioI
   return {
     id: vendaId,
     numeroVenda,
+    ccf,
+    coo,
+    pdvId: "ONLINE",
     dataVenda: new Date(),
     valorTotal,
     valorDesconto,
