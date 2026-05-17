@@ -1,13 +1,15 @@
 import { Router } from "express";
 import * as usersController from "../controllers/users.controller";
 import { authenticate } from "../middleware/auth.middleware";
+import { requireTenant } from "../middleware/tenant.middleware";
 
 export const usersRouter = Router();
 
-// Todas as rotas de usuários requerem autenticação
+// Todas as rotas de usuários requerem autenticação e empresa vinculada
 usersRouter.use(authenticate);
+usersRouter.use(requireTenant);
 
-// Listar usuários (apenas admin ou gerente - por enquanto aberto a logados, mas idealmente restrito)
+// Listar usuários
 usersRouter.get("/", usersController.listUsers);
 
 // Criar usuário
