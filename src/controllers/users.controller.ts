@@ -138,10 +138,10 @@ export const createUser = async (req: Request, res: Response) => {
     if (empresaId) {
       // Validate plan limits
       const [empresa] = await db.select().from(empresas).where(eq(empresas.id, empresaId)).limit(1);
-      if (empresa && empresa.plano === "STARTER") {
+      if (empresa && (empresa.plano === "STARTER" || empresa.plano === "BASICO")) {
         const currentUsers = await db.select().from(users).where(eq(users.empresaId, empresaId));
         if (currentUsers.length >= 1) {
-          return res.status(403).json({ error: "O plano Starter permite apenas 1 usuário. Faça upgrade para adicionar mais." });
+          return res.status(403).json({ error: "O plano atual permite apenas 1 usuário. Faça upgrade para adicionar mais." });
         }
       }
     }
