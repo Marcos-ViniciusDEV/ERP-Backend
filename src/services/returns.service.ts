@@ -1,179 +1,309 @@
-import { getDb } from "../libs/db";
+import { and, desc, eq, or } from "drizzle-orm";
 import {
-  returns,
-  returnItems,
-  vendas,
-  produtos,
-  movimentacoesEstoque,
+  itensVenda,
   movimentacoesCaixa,
+  movimentacoesEstoque,
+  produtos,
+  returnItems,
+  returns,
+  users,
+  vendas,
 } from "../../drizzle/schema";
-import { eq } from "drizzle-orm";
+import { getDb } from "../libs/db";
+
+type ReturnCondition = "GOOD" | "DAMAGED";
+type ReturnOperation = "DEVOLUCAO" | "TROCA";
 
 interface ReturnItemInput {
   productId: number;
   quantity: number;
-  condition: "GOOD" | "DAMAGED";
+  condition: ReturnCondition;
 }
 
 interface CreateReturnInput {
   originalSaleId: number;
+  operation: ReturnOperation;
   reason: string;
   operatorId: number;
   items: ReturnItemInput[];
 }
 
-/**
- * Cria uma devolução
- */
-export async function createReturn(input: CreateReturnInput) {
+function normalizeOperation(operation?: string): ReturnOperation {
+  return operation === "TROCA" ? "TROCA" : "DEVOLUCAO";
+}
+
+function getCouponCandidates(cupom: string) {
+  const value = String(cupom || "").trim();
+  const numeric = value.replace(/\D/g, "");
+  const candidates = [value];
+
+  if (numeric) {
+    candidates.push(numeric, numeric.padStart(6, "0"));
+  }
+
+  return Array.from(new Set(candidates.filter(Boolean)));
+}
+
+async function getReturnedQuantities(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, saleId: number) {
+  const rows = await db
+    .select({
+      produtoId: returnItems.produtoId,
+      quantidade: returnItems.quantidade,
+    })
+    .from(returnItems)
+    .innerJoin(returns, eq(returnItems.returnId, returns.id))
+    .where(eq(returns.originalSaleId, saleId));
+
+  return rows.reduce<Record<number, number>>((acc, row) => {
+    acc[row.produtoId] = (acc[row.produtoId] || 0) + row.quantidade;
+    return acc;
+  }, {});
+}
+
+async function loadSaleWithItems(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, empresaId: number, whereClause: any) {
+  const saleRows = await db
+    .select({
+      id: vendas.id,
+      uuid: vendas.uuid,
+      numeroVenda: vendas.numeroVenda,
+      ccf: vendas.ccf,
+      coo: vendas.coo,
+      pdvId: vendas.pdvId,
+      dataVenda: vendas.dataVenda,
+      valorTotal: vendas.valorTotal,
+      valorDesconto: vendas.valorDesconto,
+      valorLiquido: vendas.valorLiquido,
+      formaPagamento: vendas.formaPagamento,
+      status: vendas.status,
+      nfceNumero: vendas.nfceNumero,
+      nfceChave: vendas.nfceChave,
+      operadorId: vendas.operadorId,
+      operadorNome: vendas.operadorNome,
+      createdAt: vendas.createdAt,
+      empresaId: vendas.empresaId,
+    })
+    .from(vendas)
+    .where(and(eq(vendas.empresaId, empresaId), whereClause))
+    .limit(1);
+
+  const sale = saleRows[0];
+  if (!sale) return null;
+
+  const returnedQuantities = await getReturnedQuantities(db, sale.id);
+  const items = await db
+    .select({
+      id: itensVenda.id,
+      vendaId: itensVenda.vendaId,
+      produtoId: itensVenda.produtoId,
+      produtoCodigo: produtos.codigo,
+      produtoCodigoBarras: produtos.codigoBarras,
+      produtoNome: produtos.descricao,
+      quantidade: itensVenda.quantidade,
+      precoUnitario: itensVenda.precoUnitario,
+      total: itensVenda.valorTotal,
+      desconto: itensVenda.valorDesconto,
+    })
+    .from(itensVenda)
+    .leftJoin(produtos, eq(itensVenda.produtoId, produtos.id))
+    .where(eq(itensVenda.vendaId, sale.id));
+
+  return {
+    ...sale,
+    itens: items.map((item) => {
+      const returnedQuantity = returnedQuantities[item.produtoId] || 0;
+      return {
+        ...item,
+        returnedQuantity,
+        availableQuantity: Math.max(0, item.quantidade - returnedQuantity),
+      };
+    }),
+  };
+}
+
+export async function findSaleByFiscalCoupon(empresaId: number, cupom: string) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const value = String(cupom || "").trim();
+  const candidates = getCouponCandidates(value);
+  const conditions = candidates.flatMap((candidate) => [
+    eq(vendas.numeroVenda, candidate),
+    eq(vendas.ccf, candidate),
+    eq(vendas.coo, candidate),
+    eq(vendas.nfceNumero, candidate),
+    eq(vendas.nfceChave, candidate),
+  ]);
+
+  if (/^\d+$/.test(value)) {
+    conditions.push(eq(vendas.id, Number(value)));
+  }
+
+  return loadSaleWithItems(db, empresaId, or(...conditions));
+}
+
+export async function createReturn(empresaId: number, input: CreateReturnInput) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  // 1. Validar Venda Original
-  const sale = await db.query.vendas.findFirst({
-    where: eq(vendas.id, input.originalSaleId),
-    with: {
-      itens: true
-    }
-  });
-
+  const sale = await loadSaleWithItems(db, empresaId, eq(vendas.id, input.originalSaleId));
   if (!sale) throw new Error("Venda original não encontrada");
+  if (sale.status === "CANCELADA") throw new Error("Não é possível devolver uma venda cancelada");
 
-  // 2. Calcular Valor de Reembolso e Validar Itens
+  const operation = normalizeOperation(input.operation);
+  const operationLabel = operation === "TROCA" ? "Troca" : "Devolução";
   let totalRefunded = 0;
-  const itemsToInsert: {
-    produtoId: number;
-    quantidade: number;
-    condition: "GOOD" | "DAMAGED";
-    unitPrice: number;
-  }[] = [];
 
-  for (const itemInput of input.items) {
-    // @ts-ignore
-    const saleItem = sale.itens.find(i => i.produtoId === itemInput.productId);
+  const itemsToInsert = input.items.map((itemInput) => {
+    const saleItem = sale.itens.find((item) => item.produtoId === itemInput.productId);
     if (!saleItem) throw new Error(`Produto ${itemInput.productId} não pertence a esta venda`);
-    
-    if (itemInput.quantity > saleItem.quantidade) {
-       throw new Error(`Quantidade a devolver maior que a vendida para o produto ${itemInput.productId}`);
+    if (itemInput.quantity > saleItem.availableQuantity) {
+      throw new Error(`Quantidade maior que o saldo disponível para ${saleItem.produtoNome || itemInput.productId}`);
     }
 
-    // Calcular reembolso baseado no preço unitário pago
-    const refundAmount = saleItem.precoUnitario * itemInput.quantity;
-    totalRefunded += refundAmount;
-
-    itemsToInsert.push({
+    totalRefunded += saleItem.precoUnitario * itemInput.quantity;
+    return {
       produtoId: itemInput.productId,
       quantidade: itemInput.quantity,
       condition: itemInput.condition,
-      unitPrice: saleItem.precoUnitario
-    });
-  }
+      unitPrice: saleItem.precoUnitario,
+    };
+  });
 
-  // 3. Transação
-  return await db.transaction(async (tx) => {
-    // Inserir Devolução
-    const [returnRecord] = await tx.insert(returns).values({
-      originalSaleId: input.originalSaleId,
-      reason: input.reason,
-      totalRefunded: totalRefunded,
-      operatorId: input.operatorId,
-    }).$returningId();
+  return db.transaction(async (tx) => {
+    const [returnRecord] = await tx
+      .insert(returns)
+      .values({
+        originalSaleId: input.originalSaleId,
+        reason: `${operationLabel}: ${input.reason}`,
+        totalRefunded,
+        operatorId: input.operatorId,
+      })
+      .$returningId();
 
-    // Inserir Itens da Devolução e Atualizar Estoque
     for (const item of itemsToInsert) {
       await tx.insert(returnItems).values({
         returnId: returnRecord.id,
         produtoId: item.produtoId,
         quantidade: item.quantidade,
-        condition: item.condition
+        condition: item.condition,
       });
 
-      // Atualizar Estoque
-      const product = await tx.query.produtos.findFirst({
-        where: eq(produtos.id, item.produtoId)
-      });
+      const [product] = await tx
+        .select()
+        .from(produtos)
+        .where(and(eq(produtos.id, item.produtoId), eq(produtos.empresaId, empresaId)))
+        .limit(1);
 
-      if (product) {
-        if (item.condition === 'GOOD') {
-          // Retorna para estoque principal
-          const novoSaldo = product.estoque + item.quantidade;
-          
-          await tx.update(produtos)
-            .set({ estoque: novoSaldo })
-            .where(eq(produtos.id, item.produtoId));
-            
-          // Registrar movimentação de estoque
-          await tx.insert(movimentacoesEstoque).values({
-            empresaId: sale.empresaId,
-            produtoId: item.produtoId,
-            tipo: "DEVOLUCAO",
-            quantidade: item.quantidade,
-            saldoAnterior: product.estoque,
-            saldoAtual: novoSaldo,
-            custoUnitario: product.custoMedio || 0,
-            documentoReferencia: `DEV-${returnRecord.id}`,
-            observacao: `Devolução da Venda ${sale.numeroVenda}`,
-            usuarioId: input.operatorId
-          });
-        } else {
-           // Produto danificado vai para estoque de troca
-           await tx.update(produtos)
-            .set({ estoqueTroca: (product.estoqueTroca || 0) + item.quantidade })
-            .where(eq(produtos.id, item.produtoId));
-        }
+      if (!product) continue;
+
+      if (item.condition === "GOOD") {
+        const novoSaldo = product.estoque + item.quantidade;
+
+        await tx
+          .update(produtos)
+          .set({ estoque: novoSaldo })
+          .where(and(eq(produtos.id, item.produtoId), eq(produtos.empresaId, empresaId)));
+
+        await tx.insert(movimentacoesEstoque).values({
+          empresaId,
+          produtoId: item.produtoId,
+          tipo: "DEVOLUCAO",
+          quantidade: item.quantidade,
+          saldoAnterior: product.estoque,
+          saldoAtual: novoSaldo,
+          custoUnitario: product.custoMedio || product.precoCusto || 0,
+          documentoReferencia: `${operation === "TROCA" ? "TROCA" : "DEV"}-${returnRecord.id}`,
+          observacao: `${operationLabel} do cupom ${sale.numeroVenda}`,
+          usuarioId: input.operatorId,
+        });
+      } else {
+        await tx
+          .update(produtos)
+          .set({ estoqueTroca: (product.estoqueTroca || 0) + item.quantidade })
+          .where(and(eq(produtos.id, item.produtoId), eq(produtos.empresaId, empresaId)));
       }
     }
 
-    // Movimentação Financeira (Sangria/Estorno)
-    await tx.insert(movimentacoesCaixa).values({
-      empresaId: sale.empresaId,
-      tipo: "SANGRIA",
-      valor: totalRefunded,
-      operadorId: input.operatorId,
-      observacao: `Estorno/Devolução Venda ${sale.numeroVenda}`,
-      pdvId: sale.pdvId || "BACKEND"
-    });
+    if (operation === "DEVOLUCAO" && totalRefunded > 0) {
+      await tx.insert(movimentacoesCaixa).values({
+        empresaId,
+        tipo: "SANGRIA",
+        valor: totalRefunded,
+        operadorId: input.operatorId,
+        observacao: `Estorno da venda ${sale.numeroVenda}`,
+        pdvId: sale.pdvId || "BACKEND",
+      });
+    }
 
-    return returnRecord;
+    const exchangeNote =
+      operation === "TROCA"
+        ? {
+            numero: `NT-${String(returnRecord.id).padStart(6, "0")}`,
+            valor: totalRefunded,
+            vendaOrigem: sale.numeroVenda,
+            emitidaEm: new Date(),
+            observacao: "Crédito de troca para usar como dinheiro em uma próxima compra.",
+          }
+        : null;
+
+    return {
+      id: returnRecord.id,
+      operation,
+      totalRefunded,
+      exchangeNote,
+    };
   });
 }
 
-/**
- * Lista devoluções
- */
-export async function listReturns() {
+export async function listReturns(empresaId: number) {
   const db = await getDb();
   if (!db) return [];
-  
-  return await db.query.returns.findMany({
-    with: {
-      items: {
-        with: {
-          // @ts-ignore
-          produto: true
-        }
-      }
-    },
-    orderBy: (returns, { desc }) => [desc(returns.createdAt)]
-  });
+
+  const rows = await db
+    .select({
+      id: returns.id,
+      originalSaleId: returns.originalSaleId,
+      reason: returns.reason,
+      totalRefunded: returns.totalRefunded,
+      operatorId: returns.operatorId,
+      createdAt: returns.createdAt,
+      numeroVenda: vendas.numeroVenda,
+      ccf: vendas.ccf,
+      coo: vendas.coo,
+      pdvId: vendas.pdvId,
+      operadorNome: users.name,
+    })
+    .from(returns)
+    .innerJoin(vendas, eq(returns.originalSaleId, vendas.id))
+    .leftJoin(users, eq(returns.operatorId, users.id))
+    .where(eq(vendas.empresaId, empresaId))
+    .orderBy(desc(returns.createdAt));
+
+  return Promise.all(
+    rows.map(async (row) => {
+      const items = await db
+        .select({
+          id: returnItems.id,
+          returnId: returnItems.returnId,
+          produtoId: returnItems.produtoId,
+          produtoNome: produtos.descricao,
+          quantidade: returnItems.quantidade,
+          condition: returnItems.condition,
+        })
+        .from(returnItems)
+        .leftJoin(produtos, eq(returnItems.produtoId, produtos.id))
+        .where(eq(returnItems.returnId, row.id));
+
+      return {
+        ...row,
+        operation: row.reason.startsWith("Troca:") ? "TROCA" : "DEVOLUCAO",
+        items,
+      };
+    })
+  );
 }
 
-/**
- * Busca devolução por ID
- */
-export async function getReturnById(id: number) {
-  const db = await getDb();
-  if (!db) return null;
-
-  return await db.query.returns.findFirst({
-    where: eq(returns.id, id),
-    with: {
-      items: {
-        with: {
-          // @ts-ignore
-          produto: true
-        }
-      }
-    }
-  });
+export async function getReturnById(empresaId: number, id: number) {
+  const records = await listReturns(empresaId);
+  return records.find((record) => record.id === id) || null;
 }

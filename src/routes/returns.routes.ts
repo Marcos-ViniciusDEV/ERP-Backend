@@ -8,4 +8,5 @@ returnsRouter.use(authenticate);
 
 returnsRouter.post("/", returnsController.createReturn);
 returnsRouter.get("/", returnsController.listReturns);
+returnsRouter.get("/cupom/:cupom", returnsController.findSaleByFiscalCoupon);
 returnsRouter.get("/:id", returnsController.getReturnById);

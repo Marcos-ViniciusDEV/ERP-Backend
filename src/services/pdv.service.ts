@@ -29,12 +29,13 @@ export async function getCargaInicial(empresaId: number) {
       codigo: produtos.codigo,
       codigoBarras: produtos.codigoBarras,
       descricao: produtos.descricao,
-      precoVenda: produtos.precoVenda,
+      precoVenda: produtos.precoPdv,
       unidade: produtos.unidade,
       estoque: produtos.estoque,
+      ativo: produtos.ativo,
     })
     .from(produtos)
-    .where(and(eq(produtos.ativo, true), eq(produtos.empresaId, empresaId)));
+    .where(eq(produtos.empresaId, empresaId));
 
   // Buscar usuários ativos (apenas operadores e admins)
   const usuariosAtivos = await db
