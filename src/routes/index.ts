@@ -29,7 +29,6 @@ export const appRouter = Router();
 
 appRouter.use("/auth", authRouter);
 appRouter.use("/empresas", empresasRouter); // Inclui ativação de PDV e admin de tenants
-appRouter.use("/pdv", pdvRouter); // Movido para cima do authenticate, pois pdv.routes.ts tem seu próprio controle
 
 // Proteger todas as rotas abaixo com autenticação e contexto de empresa
 appRouter.use(authenticate);
@@ -47,6 +46,7 @@ appRouter.use("/kardex", kardexRouter);
 appRouter.use("/caixa", caixaRouter);
 appRouter.use("/inventario", inventarioRouter);
 appRouter.use("/conferencias", conferenciaRouter);
+appRouter.use("/pdv", pdvRouter);
 appRouter.use("/offers", offersRouter);
 appRouter.use("/materials", materialsRouter);
 appRouter.use("/recipes", recipesRouter);

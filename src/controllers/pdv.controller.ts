@@ -13,7 +13,9 @@ import * as pdvWebSocketService from "../services/pdv-websocket.service";
  */
 export async function cargaInicial(req: Request, res: Response) {
   try {
-    const empresaId = (req as any).user?.empresaId || (req as any).pdv?.empresaId || 1;
+    const empresaId = req.empresaId;
+    if (!empresaId) throw new Error("Acesso negado: empresaId não definido");
+
     const dados = await pdvService.getCargaInicial(empresaId);
     res.json({
       success: true,
@@ -39,7 +41,9 @@ export async function sincronizar(req: Request, res: Response) {
     const dadosValidados = sincronizarPDVSchema.parse(req.body);
 
     // Processar sincronização
-    const empresaId = (req as any).user?.empresaId || (req as any).pdv?.empresaId || 1;
+    const empresaId = req.empresaId;
+    if (!empresaId) throw new Error("Acesso negado: empresaId não definido");
+
     const resultado = await pdvService.sincronizar(empresaId, dadosValidados);
 
     // Se houve processamento com sucesso, transmitir atualização de estoque para todos os PDVs
@@ -102,7 +106,8 @@ export async function enviarCarga(req: Request, res: Response) {
     const { pdvIds } = req.body; // Array de IDs ou undefined para todos
 
     // Buscar carga inicial (isso também atualiza os preços PDV no banco)
-    const empresaId = (req as any).user?.empresaId || (req as any).pdv?.empresaId || 1;
+    const empresaId = req.empresaId;
+    if (!empresaId) throw new Error("Acesso negado: empresaId não definido");
     const dados = await pdvService.getCargaInicial(empresaId);
 
     let sent = 0;
@@ -149,7 +154,9 @@ export async function listMovements(req: Request, res: Response) {
       operadorId: operadorId ? Number(operadorId) : undefined,
     };
 
-    const empresaId = (req as any).user?.empresaId || 1;
+    const empresaId = req.empresaId;
+    if (!empresaId) throw new Error("Acesso negado: empresaId não definido");
+    
     const movimentos = await pdvService.listMovements(empresaId, filters);
     
     res.json({

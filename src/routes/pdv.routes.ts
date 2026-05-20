@@ -1,6 +1,5 @@
 import { Router } from "express";
 import * as pdvController from "../controllers/pdv.controller";
-import { authenticate } from "../middleware/auth.middleware";
 
 export const pdvRouter = Router();
 
@@ -10,8 +9,7 @@ pdvRouter.get("/carga-inicial", pdvController.cargaInicial);
 // POST /api/pdv/sincronizar - Sincronização de vendas e movimentos
 pdvRouter.post("/sincronizar", pdvController.sincronizar);
 
-// Todas as outras rotas do PDV requerem autenticação
-pdvRouter.use(authenticate);
+// Todas as rotas do PDV são agora protegidas globalmente pelo index.ts (authenticate e requireTenant)
 
 // GET /api/pdv/ativos - Lista PDVs conectados
 pdvRouter.get("/ativos", pdvController.getActivePDVs);
