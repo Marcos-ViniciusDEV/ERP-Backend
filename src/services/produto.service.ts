@@ -11,7 +11,7 @@
 
 import { eq, desc, and } from "drizzle-orm";
 import { getDb } from "../libs/db";
-import { produtos, movimentacoesEstoque } from "../../drizzle/schema";
+import { produtos, movimentacoesEstoque, offers, itensVenda } from "../../drizzle/schema";
 import type { CreateProdutoInput, UpdateProdutoInput } from "../models/produto.model";
 import type { Produto } from "../types/produto.types";
 
@@ -102,7 +102,8 @@ export async function update(empresaId: number, data: UpdateProdutoInput): Promi
 
 /**
  * Deleta produto
- * Remove movimentações antes de deletar (Cascade)
+ * Remove ofertas e movimentações antes de deletar (Cascade manual)
+ * Impede exclusão se houver histórico de vendas
  */
 export async function deleteProduto(empresaId: number, id: number): Promise<void> {
   const db = await getDb();
@@ -112,6 +113,15 @@ export async function deleteProduto(empresaId: number, id: number): Promise<void
   if (!produto) {
     throw new Error(`Produto ${id} não encontrado`);
   }
+
+  // Verificar se existem vendas ligadas ao produto
+  const vendasExists = await db.select().from(itensVenda).where(eq(itensVenda.produtoId, id)).limit(1);
+  if (vendasExists.length > 0) {
+    throw new Error("Este produto possui histórico de vendas e não pode ser excluído. Em vez disso, desative o produto (marque-o como Inativo).");
+  }
+
+  // Deletar ofertas do motor de promoções ligadas a este produto
+  await db.delete(offers).where(and(eq(offers.produtoId, id), eq(offers.empresaId, empresaId)));
 
   // Deletar movimentações do estoque antes de excluir o produto
   // Precisamos ter certeza que estamos apagando algo do tenant

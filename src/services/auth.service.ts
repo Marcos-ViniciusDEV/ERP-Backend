@@ -185,8 +185,13 @@ export async function validateCompany(cnpj: string, senhaAcesso: string) {
   }
 
   // Validamos a senha de acesso (senhaAtivacao)
-  // No momento aceitamos texto plano ou se o usuário digitou o código de acesso
-  if (empresa.senhaAtivacao !== senhaAcesso && empresa.codigoAcesso !== senhaAcesso) {
+  // Aceitamos texto plano, hash verificado ou se o usuário digitou o código de acesso diretamente
+  const isPasswordValid = 
+    verifyPassword(senhaAcesso, empresa.senhaAtivacao) ||
+    empresa.senhaAtivacao === senhaAcesso ||
+    empresa.codigoAcesso === senhaAcesso;
+
+  if (!isPasswordValid) {
     throw new Error("Senha de acesso da empresa incorreta");
   }
 

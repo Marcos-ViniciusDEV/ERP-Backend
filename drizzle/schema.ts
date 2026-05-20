@@ -471,7 +471,7 @@ export type ConferenciaMercadoria = typeof conferenciasMercadoria.$inferSelect;
 export type InsertConferenciaMercadoria = typeof conferenciasMercadoria.$inferInsert;
 
 /**
- * Ofertas Agendadas
+ * Ofertas Agendadas — Motor de Promoções Avançado
  */
 export const offers = mysqlTable("offers", {
   id: int("id").autoincrement().primaryKey(),
@@ -479,11 +479,25 @@ export const offers = mysqlTable("offers", {
   produtoId: int("produtoId")
     .notNull()
     .references(() => produtos.id),
-  precoOferta: int("precoOferta").notNull(), // em centavos
+  nome: varchar("nome", { length: 255 }), // Título da promoção
+  tipoDesconto: mysqlEnum("tipoDesconto", [
+    "PRECO_FIXO",
+    "PERCENTUAL",
+    "LEVE_X_PAGUE_Y",
+    "DESCONTO_SEGUNDO",
+  ]).default("PRECO_FIXO").notNull(),
+  precoOferta: int("precoOferta").default(0), // em centavos — para PRECO_FIXO
+  percentualDesconto: int("percentualDesconto").default(0), // em % — para PERCENTUAL e DESCONTO_SEGUNDO
+  qtdLeve: int("qtdLeve").default(3), // para LEVE_X_PAGUE_Y
+  qtdPague: int("qtdPague").default(2), // para LEVE_X_PAGUE_Y
   dataInicio: timestamp("dataInicio").notNull(),
   dataFim: timestamp("dataFim").notNull(),
+  horaInicio: varchar("horaInicio", { length: 5 }), // ex: "06:00" — opcional para promoções relâmpago
+  horaFim: varchar("horaFim", { length: 5 }),       // ex: "12:00"
+  aplicacaoAutomatica: boolean("aplicacaoAutomatica").default(true).notNull(),
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 export type Offer = typeof offers.$inferSelect;
