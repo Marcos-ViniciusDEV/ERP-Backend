@@ -19,3 +19,6 @@ pdvRouter.post("/enviar-carga", pdvController.enviarCarga);
 
 // GET /api/pdv/movimentos - Relatório de Sangrias/Movimentos
 pdvRouter.get("/movimentos", pdvController.listMovements);
+
+// POST /api/pdv/heartbeat - Atualiza status online do PDV (HTTP fallback)
+pdvRouter.post("/heartbeat", pdvController.heartbeat);

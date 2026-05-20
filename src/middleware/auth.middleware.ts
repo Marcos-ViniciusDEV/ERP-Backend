@@ -29,6 +29,27 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
   }
 
   try {
+    // Tokens de PDV (role=pdv_operator) são virtuais e não existem na tabela users.
+    // Montamos o req.user sintético diretamente do payload JWT.
+    if (payload.role === "pdv_operator") {
+      req.user = {
+        id: payload.userId ?? 0,
+        openId: payload.openId,
+        email: payload.email ?? null,
+        name: payload.name ?? null,
+        role: "pdv_operator",
+        empresaId: payload.empresaId ?? null,
+        password: null,
+        supervisorPassword: null,
+        loginMethod: "pdv_activation",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lastSignedIn: new Date(),
+      } as any;
+      next();
+      return;
+    }
+
     let user = await authService.getUserByOpenId(payload.openId);
 
     if (!user && payload.email) {

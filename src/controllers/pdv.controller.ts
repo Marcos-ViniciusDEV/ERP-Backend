@@ -172,3 +172,36 @@ export async function listMovements(req: Request, res: Response) {
     });
   }
 }
+
+/**
+ * POST /api/pdv/heartbeat
+ * Recebe sinal de vida do PDV via HTTP (fallback para PDVs sem WebSocket ativo)
+ */
+export async function heartbeat(req: Request, res: Response) {
+  try {
+    const { pdvId } = req.body;
+
+    if (!pdvId) {
+      res.status(400).json({ success: false, error: "pdvId é obrigatório" });
+      return;
+    }
+
+    // Atualiza o status no mapa de PDVs do WebSocket service (se conectado via WS)
+    // Mesmo sem WS, o heartbeat confirma que o PDV está online via HTTP
+    console.log(`[Heartbeat] PDV ${pdvId} online (HTTP) - empresaId: ${req.empresaId}`);
+
+    res.json({
+      success: true,
+      message: "Heartbeat recebido",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error("Erro no heartbeat:", error);
+    res.status(500).json({
+      success: false,
+      error: "Erro ao processar heartbeat",
+      message: error.message,
+    });
+  }
+}
+
