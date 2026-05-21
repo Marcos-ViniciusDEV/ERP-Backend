@@ -21,6 +21,8 @@ import productionRouter from "./production.routes";
 import { returnsRouter } from "./returns.routes";
 import { analyticsRouter } from "./analytics.routes";
 import { empresasRouter } from "./empresas.routes";
+import { employeesRouter } from "./employees.routes";
+
 
 import { authenticate } from "../middleware/auth.middleware";
 import { requireTenant } from "../middleware/tenant.middleware";
@@ -53,3 +55,5 @@ appRouter.use("/recipes", recipesRouter);
 appRouter.use("/production", productionRouter);
 appRouter.use("/returns", returnsRouter);
 appRouter.use("/analytics", analyticsRouter);
+appRouter.use("/funcionarios", employeesRouter);
+

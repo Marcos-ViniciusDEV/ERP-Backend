@@ -608,3 +608,25 @@ export const salesGoals = mysqlTable("sales_goals", {
 
 export type SalesGoal = typeof salesGoals.$inferSelect;
 export type InsertSalesGoal = typeof salesGoals.$inferInsert;
+
+/**
+ * Funcionários (Gestão de Recursos Humanos)
+ */
+export const funcionarios = mysqlTable("funcionarios", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  nome: varchar("nome", { length: 255 }).notNull(),
+  cargo: varchar("cargo", { length: 100 }).notNull(),
+  salario: int("salario").notNull().default(0), // em centavos
+  dataAdmissao: timestamp("dataAdmissao").defaultNow().notNull(),
+  dataDesligamento: timestamp("dataDesligamento"),
+  telefone: varchar("telefone", { length: 20 }),
+  email: varchar("email", { length: 320 }),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Funcionario = typeof funcionarios.$inferSelect;
+export type InsertFuncionario = typeof funcionarios.$inferInsert;
+

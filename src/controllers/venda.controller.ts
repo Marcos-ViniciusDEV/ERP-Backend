@@ -39,8 +39,9 @@ export async function create(req: Request, res: Response) {
     const usuarioId = req.user!.id;
     const venda = await vendaService.create(req.empresaId!, data, usuarioId);
     res.status(201).json(venda);
-  } catch (error) {
-    res.status(500).json({ error: "Erro ao criar venda" });
+  } catch (error: any) {
+    console.error("[VendaController] Error creating sale:", error);
+    res.status(400).json({ error: error.message || "Erro ao criar venda" });
   }
 }
 

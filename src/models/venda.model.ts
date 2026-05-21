@@ -20,7 +20,7 @@ export const itemVendaSchema = z.object({
  */
 export const createVendaSchema = z.object({
   clienteId: z.number().optional(),
-  formaPagamento: z.enum(["dinheiro", "cartao", "pix", "boleto", "credito"]),
+  formaPagamento: z.enum(["dinheiro", "debito", "credito", "cartao", "pix", "boleto"]),
   itens: z.array(itemVendaSchema).min(1, "Venda deve ter pelo menos 1 item"),
   desconto: z.number().default(0),
   observacoes: z.string().optional(),

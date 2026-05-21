@@ -1,12 +1,12 @@
-/**
+﻿/**
  * @module VendaService
- * @description Serviço de lógica de negócio para Vendas
+ * @description ServiÃ§o de lÃ³gica de negÃ³cio para Vendas
  *
  * Responsabilidades:
- * - Criação de vendas com validação de estoque
- * - Cálculo de totais e descontos
- * - Atualização de estoque via Kardex
- * - Geração de movimentações financeiras
+ * - CriaÃ§Ã£o de vendas com validaÃ§Ã£o de estoque
+ * - CÃ¡lculo de totais e descontos
+ * - AtualizaÃ§Ã£o de estoque via Kardex
+ * - GeraÃ§Ã£o de movimentaÃ§Ãµes financeiras
  */
 
 import { eq, desc, and, sql, inArray } from "drizzle-orm";
@@ -66,9 +66,9 @@ export async function list(empresaId: number, filters?: {
   }
 
   // Filtros complexos que exigem joins (Barcode, Dept, Supplier)
-  // Como o drizzle não suporta facilmente filtro em tabela joinada retornando a tabela principal sem duplicatas
+  // Como o drizzle nÃ£o suporta facilmente filtro em tabela joinada retornando a tabela principal sem duplicatas
   // Vamos fazer em duas etapas se houver esses filtros:
-  // 1. Buscar IDs das vendas que atendem aos critérios
+  // 1. Buscar IDs das vendas que atendem aos critÃ©rios
   // 2. Buscar as vendas por esses IDs
 
   if (filters?.codigoBarras || filters?.departamentoId) {
@@ -139,22 +139,12 @@ export async function list(empresaId: number, filters?: {
  * Cria nova venda
  * - Valida estoque de todos os produtos
  * - Calcula totais
- * - Cria movimentações de estoque
- * - Registra movimentação de caixa
+ * - Cria movimentaÃ§Ãµes de estoque
+ * - Registra movimentaÃ§Ã£o de caixa
  */
 export async function create(empresaId: number, data: CreateVendaInput, usuarioId: number): Promise<any> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-
-  // Validar estoque de todos os produtos
-  for (const item of data.itens) {
-    const temEstoque = await produtoService.checkEstoque(empresaId, item.produtoId, item.quantidade);
-
-    if (!temEstoque) {
-      const produto = await produtoService.getById(empresaId, item.produtoId);
-      throw new Error(`Estoque insuficiente para ${produto?.descricao}. Disponível: ${produto?.estoque}`);
-    }
-  }
 
   // Calcular totais (valores em centavos)
   let valorTotal = 0;
@@ -166,10 +156,10 @@ export async function create(empresaId: number, data: CreateVendaInput, usuarioI
   const valorDesconto = data.desconto || 0;
   const valorLiquido = valorTotal - valorDesconto;
 
-  // Gerar número da venda
+  // Gerar nÃºmero da venda
   const numeroVenda = `V${Date.now()}`;
 
-  // Buscar última venda para sequenciar CCF e COO
+  // Buscar Ãºltima venda para sequenciar CCF e COO
   const [latestSale] = await db
     .select({ ccf: vendas.ccf, coo: vendas.coo })
     .from(vendas)
@@ -221,7 +211,7 @@ export async function create(empresaId: number, data: CreateVendaInput, usuarioI
       valorDesconto: valorDescontoItem,
     });
 
-    // Movimentar estoque (saída via VENDA_PDV)
+    // Movimentar estoque (saÃ­da via VENDA_PDV)
     const saldoAnterior = produto.estoque;
     const saldoAtual = saldoAnterior - item.quantidade;
 
@@ -229,7 +219,7 @@ export async function create(empresaId: number, data: CreateVendaInput, usuarioI
       empresaId,
       produtoId: item.produtoId,
       tipo: "VENDA_PDV",
-      quantidade: -item.quantidade, // Negativo para saída
+      quantidade: -item.quantidade, // Negativo para saÃ­da
       saldoAnterior,
       saldoAtual,
       custoUnitario: item.precoUnitario,
@@ -241,11 +231,11 @@ export async function create(empresaId: number, data: CreateVendaInput, usuarioI
     await db.update(produtos).set({ estoque: saldoAtual }).where(and(eq(produtos.id, item.produtoId), eq(produtos.empresaId, empresaId)));
   }
 
-  // Registrar movimentação de caixa (entrada via ABERTURA)
-  // TODO: Usar tipo correto para entrada de venda quando disponível no enum
+  // Registrar movimentaÃ§Ã£o de caixa (entrada via ABERTURA)
+  // TODO: Usar tipo correto para entrada de venda quando disponÃ­vel no enum
   await db.insert(movimentacoesCaixa).values({
     empresaId,
-    tipo: "ABERTURA", // Temporário, ideal seria VENDA ou ENTRADA
+    tipo: "ABERTURA", // TemporÃ¡rio, ideal seria VENDA ou ENTRADA
     valor: valorLiquido,
     dataMovimento: new Date(),
     operadorId: usuarioId,
@@ -270,21 +260,21 @@ export async function create(empresaId: number, data: CreateVendaInput, usuarioI
 }
 
 /**
- * Busca vendas por período
+ * Busca vendas por perÃ­odo
  */
 export async function getByPeriodo(empresaId: number, dataInicio: string, dataFim: string): Promise<any[]> {
   const db = await getDb();
   if (!db) return [];
 
-  // Buscar vendas no período usando comparação de timestamp string
-  // Isso evita problemas de timezone e conversão de data
+  // Buscar vendas no perÃ­odo usando comparaÃ§Ã£o de timestamp string
+  // Isso evita problemas de timezone e conversÃ£o de data
   
-  // Se dataInicio não for fornecida, usar data muito antiga
+  // Se dataInicio nÃ£o for fornecida, usar data muito antiga
   const startStr = dataInicio ? dataInicio : '1970-01-01';
-  // Se dataFim não for fornecida, usar data muito futura (ou hoje 23:59:59)
+  // Se dataFim nÃ£o for fornecida, usar data muito futura (ou hoje 23:59:59)
   const endStr = dataFim ? dataFim : '2100-12-31';
 
-  // Buscar vendas no período usando comparação direta de string SQL
+  // Buscar vendas no perÃ­odo usando comparaÃ§Ã£o direta de string SQL
   // Isso evita problemas de timezone do driver/ORM
   const start = `${startStr} 00:00:00`;
   const end = `${endStr} 23:59:59`;
@@ -362,7 +352,7 @@ export async function getByProduto(empresaId: number, produtoId: number): Promis
 }
 
 /**
- * Busca venda por ID ou Número
+ * Busca venda por ID ou NÃºmero
  */
 export async function getById(empresaId: number, idOrNumber: string | number): Promise<any | null> {
   const db = await getDb();
@@ -421,3 +411,4 @@ export async function getById(empresaId: number, idOrNumber: string | number): P
     itens,
   };
 }
+

@@ -53,3 +53,27 @@ export async function getGoalsPerformance(req: Request, res: Response) {
     res.status(500).json({ success: false, error: error.message });
   }
 }
+
+export async function getStaleProducts(req: Request, res: Response) {
+  try {
+    const empresaId = req.user?.empresaId || 1;
+    const daysThreshold = Number(req.query.daysThreshold) || 30;
+    const result = await analyticsService.getStaleProducts(empresaId, daysThreshold);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+export async function getFinancialSummary(req: Request, res: Response) {
+  try {
+    const empresaId = req.user?.empresaId || 1;
+    const startDate = req.query.startDate as string | undefined;
+    const endDate = req.query.endDate as string | undefined;
+    const result = await analyticsService.getFinancialSummary(empresaId, startDate, endDate);
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+

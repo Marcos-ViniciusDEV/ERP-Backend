@@ -9,3 +9,6 @@ analyticsRouter.use(authenticate);
 analyticsRouter.get("/abc", analyticsController.getABC);
 analyticsRouter.get("/goals", analyticsController.getGoalsPerformance);
 analyticsRouter.post("/goals", analyticsController.upsertGoal);
+analyticsRouter.get("/stale-products", analyticsController.getStaleProducts);
+analyticsRouter.get("/financial-summary", analyticsController.getFinancialSummary);
+

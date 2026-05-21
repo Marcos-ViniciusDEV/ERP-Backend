@@ -19,6 +19,29 @@ async function main() {
   console.log("Updating users table...");
   try { await db.execute("ALTER TABLE `users` ADD COLUMN `fotoCaminho` varchar(255);"); } catch(e: any) { console.log(e.message) }
 
+  console.log("Creating funcionarios table...");
+  try {
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS \`funcionarios\` (
+        \`id\` int AUTO_INCREMENT PRIMARY KEY,
+        \`empresaId\` int NOT NULL,
+        \`nome\` varchar(255) NOT NULL,
+        \`cargo\` varchar(100) NOT NULL,
+        \`salario\` int NOT NULL DEFAULT 0,
+        \`dataAdmissao\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`dataDesligamento\` timestamp NULL,
+        \`telefone\` varchar(20),
+        \`email\` varchar(320),
+        \`ativo\` boolean NOT NULL DEFAULT true,
+        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (\`empresaId\`) REFERENCES \`empresas\` (\`id\`)
+      );
+    `);
+  } catch (e: any) {
+    console.log("Error creating funcionarios:", e.message);
+  }
+
   console.log("Schema updated successfully!");
   process.exit(0);
 }
