@@ -28,8 +28,16 @@ jest.mock("nanoid", () => ({
 jest.mock("../../drizzle/schema", () => ({
   users: {
     id: "id",
+    empresaId: "empresaId",
     email: "email",
     openId: "openId",
+    password: "password",
+    role: "role",
+  },
+  empresas: {
+    id: "id",
+    codigoAcesso: "codigoAcesso",
+    ativo: "ativo",
   },
 }));
 
@@ -90,11 +98,14 @@ describe("AuthService", () => {
         name: "Test User",
         role: "user",
         openId: "test-openid",
+        empresaId: 1,
       };
 
-      mockDb.limit.mockResolvedValue([mockUser]);
+      mockDb.limit
+        .mockResolvedValueOnce([mockUser])
+        .mockResolvedValueOnce([{ id: 1, codigoAcesso: "EMPRESA", ativo: true }]);
 
-      const result = await authService.login("test@example.com", "password");
+      const result = await authService.login("test@example.com", "password", "EMPRESA");
 
       expect(result).toHaveProperty("token", "mock-token");
       expect(result.user).toEqual(mockUser);

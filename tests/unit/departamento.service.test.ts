@@ -11,6 +11,7 @@ jest.mock("../../src/libs/db", () => ({
 jest.mock("../../drizzle/schema", () => ({
   departamentos: {
     id: "id",
+    empresaId: "empresaId",
     nome: "nome",
   },
 }));
@@ -19,6 +20,7 @@ describe("DepartamentoService", () => {
   const mockDb = {
     select: jest.fn(),
     from: jest.fn(),
+    where: jest.fn(),
     insert: jest.fn(),
     values: jest.fn(),
   } as any;
@@ -29,6 +31,7 @@ describe("DepartamentoService", () => {
     // Setup chainable mocks
     mockDb.select.mockReturnValue(mockDb);
     mockDb.from.mockReturnValue(mockDb);
+    mockDb.where.mockReturnValue(mockDb);
     mockDb.insert.mockReturnValue(mockDb);
     mockDb.values.mockReturnValue(mockDb);
 
@@ -38,9 +41,9 @@ describe("DepartamentoService", () => {
   describe("getAll", () => {
     it("should return list of departamentos", async () => {
       const mockDepartamentos = [{ id: 1, nome: "Departamento 1" }];
-      mockDb.from.mockResolvedValue(mockDepartamentos);
+      mockDb.where.mockResolvedValue(mockDepartamentos);
 
-      const result = await departamentoService.getAll();
+      const result = await departamentoService.getAll(1);
 
       expect(result).toEqual(mockDepartamentos);
       expect(mockDb.select).toHaveBeenCalled();
@@ -49,7 +52,7 @@ describe("DepartamentoService", () => {
 
     it("should return empty array if db not available", async () => {
       jest.mocked(getDb).mockResolvedValue(null);
-      const result = await departamentoService.getAll();
+      const result = await departamentoService.getAll(1);
       expect(result).toEqual([]);
     });
   });
@@ -59,16 +62,16 @@ describe("DepartamentoService", () => {
       const input = { nome: "Novo Departamento" };
       mockDb.values.mockResolvedValue([{ insertId: 1 }]);
 
-      await departamentoService.create(input as any);
+      await departamentoService.create(1, input as any);
 
       expect(mockDb.insert).toHaveBeenCalled();
-      expect(mockDb.values).toHaveBeenCalledWith(input);
+      expect(mockDb.values).toHaveBeenCalledWith({ ...input, empresaId: 1 });
     });
 
     it("should throw error if db not available", async () => {
       jest.mocked(getDb).mockResolvedValue(null);
       
-      await expect(departamentoService.create({} as any))
+      await expect(departamentoService.create(1, {} as any))
         .rejects.toThrow("Database not available");
     });
   });

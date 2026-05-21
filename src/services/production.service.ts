@@ -24,7 +24,14 @@ export const productionService = {
       })
       .from(receitas)
       .innerJoin(materiais, eq(receitas.materialId, materiais.id))
-      .where(eq(receitas.produtoId, produtoId));
+      .innerJoin(produtos, eq(receitas.produtoId, produtos.id))
+      .where(
+        and(
+          eq(receitas.produtoId, produtoId),
+          eq(produtos.empresaId, empresaId),
+          eq(materiais.empresaId, empresaId)
+        )
+      );
 
     if (productRecipes.length === 0) {
       throw new Error("Este produto não possui ficha técnica (receita). Cadastre os ingredientes primeiro.");

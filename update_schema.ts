@@ -42,6 +42,44 @@ async function main() {
     console.log("Error creating funcionarios:", e.message);
   }
 
+  console.log("Creating expense_goals table...");
+  try {
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS \`expense_goals\` (
+        \`id\` int AUTO_INCREMENT PRIMARY KEY,
+        \`empresaId\` int NOT NULL,
+        \`month\` int NOT NULL,
+        \`year\` int NOT NULL,
+        \`targetAmount\` int NOT NULL,
+        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (\`empresaId\`) REFERENCES \`empresas\` (\`id\`)
+      );
+    `);
+  } catch (e: any) {
+    console.log("Error creating expense_goals:", e.message);
+  }
+
+  console.log("Creating whatsapp_configs table...");
+  try {
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS \`whatsapp_configs\` (
+        \`id\` int AUTO_INCREMENT PRIMARY KEY,
+        \`empresaId\` int NOT NULL,
+        \`phoneNumber\` varchar(20) NOT NULL,
+        \`defaultMessage\` text,
+        \`businessHoursStart\` varchar(5),
+        \`businessHoursEnd\` varchar(5),
+        \`enabled\` boolean NOT NULL DEFAULT true,
+        \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (\`empresaId\`) REFERENCES \`empresas\` (\`id\`)
+      );
+    `);
+  } catch (e: any) {
+    console.log("Error creating whatsapp_configs:", e.message);
+  }
+
   console.log("Schema updated successfully!");
   process.exit(0);
 }

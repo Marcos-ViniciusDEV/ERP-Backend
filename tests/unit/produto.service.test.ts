@@ -11,6 +11,7 @@ jest.mock("../../src/libs/db", () => ({
 jest.mock("../../drizzle/schema", () => ({
   produtos: {
     id: "id",
+    empresaId: "empresaId",
     codigo: "codigo",
     nome: "nome",
     precoCusto: "precoCusto",
@@ -59,7 +60,7 @@ describe("ProdutoService", () => {
   describe("list", () => {
     it("should return list of products", async () => {
       const mockProdutos = [{ id: 1, nome: "Produto 1" }];
-      mockDb.from.mockResolvedValue(mockProdutos);
+      mockDb.where.mockResolvedValue(mockProdutos);
 
       const result = await produtoService.list(1);
 
@@ -85,7 +86,7 @@ describe("ProdutoService", () => {
         .mockResolvedValueOnce([]) // No duplicate code
         .mockResolvedValueOnce([{ id: 1, ...input, precoVenda: 15 }]); // Get created product
 
-      const result = await produtoService.create(input as any);
+      const result = await produtoService.create(1, input as any);
 
       expect(result).toHaveProperty("id", 1);
       expect(mockDb.insert).toHaveBeenCalled();
@@ -98,7 +99,7 @@ describe("ProdutoService", () => {
     it("should throw error if code exists", async () => {
       mockDb.limit.mockResolvedValue([{ id: 1 }]); // Duplicate code
 
-      await expect(produtoService.create({ codigo: "123" } as any))
+      await expect(produtoService.create(1, { codigo: "123" } as any))
         .rejects.toThrow("Já existe um produto com o código 123");
     });
   });

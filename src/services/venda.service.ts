@@ -146,6 +146,16 @@ export async function create(empresaId: number, data: CreateVendaInput, usuarioI
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
+  // Validar estoque de todos os produtos antes de registrar a venda
+  for (const item of data.itens) {
+    const temEstoque = await produtoService.checkEstoque(empresaId, item.produtoId, item.quantidade);
+
+    if (!temEstoque) {
+      const produto = await produtoService.getById(empresaId, item.produtoId);
+      throw new Error(`Estoque insuficiente para ${produto?.descricao}. Disponível: ${produto?.estoque}`);
+    }
+  }
+
   // Calcular totais (valores em centavos)
   let valorTotal = 0;
   for (const item of data.itens) {

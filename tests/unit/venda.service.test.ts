@@ -21,14 +21,31 @@ jest.mock("crypto", () => ({
 jest.mock("../../drizzle/schema", () => ({
   vendas: {
     id: "id",
+    empresaId: "empresaId",
     numeroVenda: "numeroVenda",
+    uuid: "uuid",
+    ccf: "ccf",
+    coo: "coo",
+    pdvId: "pdvId",
     dataVenda: "dataVenda",
+    valorTotal: "valorTotal",
+    valorDesconto: "valorDesconto",
     valorLiquido: "valorLiquido",
+    formaPagamento: "formaPagamento",
+    status: "status",
+    observacao: "observacao",
+    operadorId: "operadorId",
+    operadorNome: "operadorNome",
+    createdAt: "createdAt",
   },
   itensVenda: {
     id: "id",
     vendaId: "vendaId",
     produtoId: "produtoId",
+    quantidade: "quantidade",
+    precoUnitario: "precoUnitario",
+    valorTotal: "valorTotal",
+    valorDesconto: "valorDesconto",
   },
   movimentacoesEstoque: {
     id: "id",
@@ -39,7 +56,12 @@ jest.mock("../../drizzle/schema", () => ({
   produtos: {
     id: "id",
     descricao: "descricao",
+    departamentoId: "departamentoId",
     estoque: "estoque",
+  },
+  users: {
+    id: "id",
+    name: "name",
   },
 }));
 
@@ -55,6 +77,8 @@ describe("VendaService", () => {
     values: jest.fn(),
     update: jest.fn(),
     set: jest.fn(),
+    limit: jest.fn(),
+    $dynamic: jest.fn(),
   } as any;
 
   beforeEach(() => {
@@ -71,6 +95,8 @@ describe("VendaService", () => {
     mockDb.values.mockReturnValue(mockDb);
     mockDb.update.mockReturnValue(mockDb);
     mockDb.set.mockReturnValue(mockDb);
+    mockDb.limit.mockResolvedValue([]);
+    mockDb.$dynamic.mockReturnValue(mockDb);
 
     jest.mocked(getDb).mockResolvedValue(mockDb);
   });
@@ -95,8 +121,9 @@ describe("VendaService", () => {
       } as any);
 
       mockDb.values.mockResolvedValue([{ insertId: 1 }]);
+      mockDb.limit.mockResolvedValueOnce([{ ccf: "000001", coo: "000001" }]);
 
-      const result = await vendaService.create(mockVendaInput as any, 1);
+      const result = await vendaService.create(1, mockVendaInput as any, 1);
 
       expect(result).toHaveProperty("id", 1);
       expect(result).toHaveProperty("valorTotal", 2000);
@@ -112,7 +139,7 @@ describe("VendaService", () => {
         descricao: "Produto 1",
       } as any);
 
-      await expect(vendaService.create(mockVendaInput as any, 1))
+      await expect(vendaService.create(1, mockVendaInput as any, 1))
         .rejects.toThrow("Estoque insuficiente");
     });
   });
@@ -122,8 +149,10 @@ describe("VendaService", () => {
       const mockVendas = [{ id: 1, numeroVenda: "V001" }];
       const mockItens = [{ id: 1, produtoNome: "Produto 1" }];
 
+      mockDb.where
+        .mockReturnValueOnce(mockDb)
+        .mockResolvedValueOnce(mockItens);
       mockDb.orderBy.mockResolvedValueOnce(mockVendas);
-      mockDb.where.mockResolvedValue(mockItens);
 
       const result = await vendaService.list(1);
 

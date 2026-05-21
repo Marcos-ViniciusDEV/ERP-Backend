@@ -1,5 +1,5 @@
 import { getDb } from "../libs/db";
-import { salesGoals, vendas, itensVenda, produtos, contasPagar, contasReceber } from "../../drizzle/schema";
+import { salesGoals, expenseGoals, vendas, itensVenda, produtos, contasPagar, contasReceber } from "../../drizzle/schema";
 import { eq, and, sql, desc, or } from "drizzle-orm";
 
 /**
@@ -145,15 +145,90 @@ export async function getSalesPerformance(empresaId: number, month: number, year
 }
 
 /**
+ * Define ou atualiza meta mensal de despesas
+ */
+export async function upsertExpenseGoal(empresaId: number, month: number, year: number, targetAmount: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const existing = await db.query.expenseGoals.findFirst({
+    where: and(
+      eq(expenseGoals.month, month),
+      eq(expenseGoals.year, year),
+      eq(expenseGoals.empresaId, empresaId)
+    )
+  });
+
+  if (existing) {
+    await db.update(expenseGoals)
+      .set({ targetAmount })
+      .where(eq(expenseGoals.id, existing.id));
+    return { ...existing, targetAmount };
+  }
+
+  const [inserted] = await db.insert(expenseGoals).values({
+    empresaId,
+    month,
+    year,
+    targetAmount
+  }).$returningId();
+
+  return { id: inserted.id, month, year, targetAmount };
+}
+
+/**
+ * Busca gastos realizados vs meta mensal de despesas
+ */
+export async function getExpensePerformance(empresaId: number, month: number, year: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const goal = await db.query.expenseGoals.findFirst({
+    where: and(
+      eq(expenseGoals.month, month),
+      eq(expenseGoals.year, year),
+      eq(expenseGoals.empresaId, empresaId)
+    )
+  });
+
+  const startStr = `${year}-${String(month).padStart(2, '0')}-01 00:00:00`;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const nextYear = month === 12 ? year + 1 : year;
+  const endStr = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01 00:00:00`;
+
+  const paidQuery = await db.select({
+    total: sql<number>`sum(${contasPagar.valor})`.mapWith(Number)
+  })
+  .from(contasPagar)
+  .where(
+    and(
+      eq(contasPagar.status, 'PAGO'),
+      eq(contasPagar.empresaId, empresaId),
+      sql`${contasPagar.dataPagamento} >= ${startStr}`,
+      sql`${contasPagar.dataPagamento} < ${endStr}`
+    )
+  );
+
+  const spent = paidQuery[0]?.total || 0;
+  const target = goal?.targetAmount || 0;
+
+  return {
+    month,
+    year,
+    target,
+    spent,
+    percentage: target > 0 ? (spent / target) * 100 : 0,
+    remainingBudget: Math.max(0, target - spent),
+    exceeded: target > 0 && spent > target,
+  };
+}
+
+/**
  * Retorna produtos encalhados (sem vendas nos últimos X dias)
  */
 export async function getStaleProducts(empresaId: number, daysThreshold: number = 30) {
   const db = await getDb();
   if (!db) return [];
-
-  const thresholdDate = new Date();
-  thresholdDate.setDate(thresholdDate.getDate() - daysThreshold);
-  const startStr = thresholdDate.toISOString().split('T')[0] + ' 00:00:00';
 
   // 1. Pegar última data de venda por produto
   const lastSales = await db.select({

@@ -610,6 +610,22 @@ export type SalesGoal = typeof salesGoals.$inferSelect;
 export type InsertSalesGoal = typeof salesGoals.$inferInsert;
 
 /**
+ * Metas de Despesas
+ */
+export const expenseGoals = mysqlTable("expense_goals", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  month: int("month").notNull(),
+  year: int("year").notNull(),
+  targetAmount: int("targetAmount").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ExpenseGoal = typeof expenseGoals.$inferSelect;
+export type InsertExpenseGoal = typeof expenseGoals.$inferInsert;
+
+/**
  * Funcionários (Gestão de Recursos Humanos)
  */
 export const funcionarios = mysqlTable("funcionarios", {
@@ -630,3 +646,20 @@ export const funcionarios = mysqlTable("funcionarios", {
 export type Funcionario = typeof funcionarios.$inferSelect;
 export type InsertFuncionario = typeof funcionarios.$inferInsert;
 
+/**
+ * Configuracao de WhatsApp por empresa.
+ */
+export const whatsappConfigs = mysqlTable("whatsapp_configs", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
+  defaultMessage: text("defaultMessage"),
+  businessHoursStart: varchar("businessHoursStart", { length: 5 }),
+  businessHoursEnd: varchar("businessHoursEnd", { length: 5 }),
+  enabled: boolean("enabled").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type WhatsappConfig = typeof whatsappConfigs.$inferSelect;
+export type InsertWhatsappConfig = typeof whatsappConfigs.$inferInsert;

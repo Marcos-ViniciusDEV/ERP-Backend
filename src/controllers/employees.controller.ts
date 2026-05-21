@@ -20,7 +20,7 @@ export const create = async (req: Request, res: Response) => {
     res.json(result);
   } catch (error: any) {
     if (error instanceof ZodError) {
-      res.status(400).json({ error: error.errors });
+      res.status(400).json({ error: error.issues });
       return;
     }
     res.status(500).json({ error: error.message });
@@ -35,7 +35,7 @@ export const update = async (req: Request, res: Response) => {
     res.json(result);
   } catch (error: any) {
     if (error instanceof ZodError) {
-      res.status(400).json({ error: error.errors });
+      res.status(400).json({ error: error.issues });
       return;
     }
     res.status(500).json({ error: error.message });

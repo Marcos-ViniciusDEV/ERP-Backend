@@ -11,15 +11,22 @@ jest.mock("../../src/libs/db", () => ({
 jest.mock("../../drizzle/schema", () => ({
   produtos: {
     id: "id",
+    empresaId: "empresaId",
     codigo: "codigo",
+    codigoBarras: "codigoBarras",
+    descricao: "descricao",
     ativo: "ativo",
     estoque: "estoque",
     precoPdv: "precoPdv",
     precoVenda: "precoVenda",
+    unidade: "unidade",
   },
   users: {
     id: "id",
+    empresaId: "empresaId",
     name: "name",
+    email: "email",
+    password: "password",
     role: "role",
   },
   vendas: {
@@ -81,12 +88,8 @@ describe("PDVService", () => {
       const mockProdutos = [{ id: 1, nome: "Produto 1" }];
       const mockUsers = [{ id: 1, name: "User 1", password: "hash" }];
 
-      mockDb.where.mockResolvedValue(mockProdutos); // Produtos
-      
-      // First call to from() is for products (chain continues to where)
-      // Second call to from() is for users (terminates)
-      mockDb.from
-        .mockReturnValueOnce(mockDb)
+      mockDb.where
+        .mockResolvedValueOnce(mockProdutos)
         .mockResolvedValueOnce(mockUsers);
 
       const result = await pdvService.getCargaInicial(1);
@@ -125,7 +128,7 @@ describe("PDVService", () => {
       mockDb.limit.mockResolvedValueOnce([]); // Sale check
       mockDb.limit.mockResolvedValueOnce([{ estoque: 10 }]); // Product check
 
-      await pdvService.sincronizar(input as any);
+      await pdvService.sincronizar(1, input as any);
 
       expect(mockDb.insert).toHaveBeenCalledTimes(3); // Venda, Item, Movimentacao
       // Actually: Venda (1), Item (1), Movimentacao (1) = 3 inserts related to sale
@@ -143,7 +146,7 @@ describe("PDVService", () => {
 
       mockDb.limit.mockResolvedValueOnce([{ id: 1 }]); // Sale exists
 
-      const result = await pdvService.sincronizar(input as any);
+      const result = await pdvService.sincronizar(1, input as any);
 
       expect(result.vendasDuplicadas).toBe(1);
       expect(result.vendasProcessadas).toBe(0);

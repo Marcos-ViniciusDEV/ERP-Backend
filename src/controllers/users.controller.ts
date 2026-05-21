@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { getDb } from "../libs/db";
 import { users, empresas } from "../../drizzle/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { hashPassword, verifyPassword } from "../libs/password";
 import { z } from "zod";
 import fs from "fs";

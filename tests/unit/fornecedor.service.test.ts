@@ -11,6 +11,7 @@ jest.mock("../../src/libs/db", () => ({
 jest.mock("../../drizzle/schema", () => ({
   fornecedores: {
     id: "id",
+    empresaId: "empresaId",
     nome: "nome",
     cnpj: "cnpj",
   },
@@ -47,9 +48,9 @@ describe("FornecedorService", () => {
   describe("getAll", () => {
     it("should return list of fornecedores", async () => {
       const mockFornecedores = [{ id: 1, nome: "Fornecedor 1" }];
-      mockDb.from.mockResolvedValue(mockFornecedores);
+      mockDb.where.mockResolvedValue(mockFornecedores);
 
-      const result = await fornecedorService.getAll();
+      const result = await fornecedorService.getAll(1);
 
       expect(result).toEqual(mockFornecedores);
       expect(mockDb.select).toHaveBeenCalled();
@@ -59,19 +60,19 @@ describe("FornecedorService", () => {
 
   describe("create", () => {
     it("should create a fornecedor successfully", async () => {
-      const input = { nome: "Novo Fornecedor" };
+      const input = { razaoSocial: "Novo Fornecedor", cnpj: "123" };
       mockDb.values.mockResolvedValue([{ insertId: 1 }]);
 
-      await fornecedorService.create(input as any);
+      await fornecedorService.create(1, input as any);
 
       expect(mockDb.insert).toHaveBeenCalled();
-      expect(mockDb.values).toHaveBeenCalledWith(input);
+      expect(mockDb.values).toHaveBeenCalledWith({ ...input, empresaId: 1 });
     });
   });
 
   describe("update", () => {
     it("should update a fornecedor successfully", async () => {
-      const input = { nome: "Fornecedor Atualizado" };
+      const input = { razaoSocial: "Fornecedor Atualizado" };
       mockDb.where.mockResolvedValue({ affectedRows: 1 });
 
       await fornecedorService.update(1, 1, input);
@@ -85,7 +86,7 @@ describe("FornecedorService", () => {
     it("should delete a fornecedor successfully", async () => {
       mockDb.where.mockResolvedValue({ affectedRows: 1 });
 
-      await fornecedorService.deleteFornecedor(1);
+      await fornecedorService.deleteFornecedor(1, 1);
 
       expect(mockDb.delete).toHaveBeenCalled();
     });

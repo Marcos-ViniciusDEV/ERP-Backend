@@ -75,7 +75,7 @@ describe("KardexService", () => {
       };
       mockDb.values.mockResolvedValue([{ insertId: 1 }]);
 
-      await kardexService.create(input as any, 1);
+      await kardexService.create(1, input as any, 1);
 
       expect(mockDb.insert).toHaveBeenCalled();
       expect(mockDb.values).toHaveBeenCalledWith(expect.objectContaining({
@@ -98,7 +98,7 @@ describe("KardexService", () => {
       };
       mockDb.values.mockResolvedValue([{ insertId: 1 }]);
 
-      await kardexService.create(input as any, 1);
+      await kardexService.create(1, input as any, 1);
 
       expect(mockDb.values).toHaveBeenCalledWith(expect.objectContaining({
         statusConferencia: undefined,
@@ -125,7 +125,7 @@ describe("KardexService", () => {
       mockDb.where.mockResolvedValueOnce({ affectedRows: 1 }); // Update produto
       mockDb.where.mockResolvedValueOnce({ affectedRows: 1 }); // Delete movs
 
-      await kardexService.deleteByDocumento("DOC-123");
+      await kardexService.deleteByDocumento(1, "DOC-123");
 
       expect(mockDb.set).toHaveBeenCalledWith({ estoque: 40 }); // 50 - 10
       expect(mockDb.delete).toHaveBeenCalled();
@@ -143,7 +143,7 @@ describe("KardexService", () => {
       mockDb.where.mockResolvedValueOnce(movs); // Get movs
       mockDb.where.mockResolvedValueOnce({ affectedRows: 1 }); // Delete movs
 
-      await kardexService.deleteByDocumento("DOC-123");
+      await kardexService.deleteByDocumento(1, "DOC-123");
 
       expect(mockDb.update).not.toHaveBeenCalled();
       expect(mockDb.delete).toHaveBeenCalled();

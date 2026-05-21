@@ -1,6 +1,6 @@
 import { eq, and, lte, gte, desc } from "drizzle-orm";
 import { getDb } from "../libs/db";
-import { offers, produtos, type InsertOffer } from "../../drizzle/schema";
+import { offers, produtos } from "../../drizzle/schema";
 
 // Tipo de oferta com dados do produto
 export type OfferWithProduct = typeof offers.$inferSelect & {
@@ -37,7 +37,7 @@ export function calcularDesconto(
 ): { precoFinal: number; descontoTotal: number; descricaoDesconto: string } {
   switch (offer.tipoDesconto) {
     case "PRECO_FIXO": {
-      const precoFinal = offer.precoOferta;
+      const precoFinal = offer.precoOferta ?? precoOriginal;
       const descontoTotal = Math.max(0, (precoOriginal - precoFinal) * quantidade);
       return {
         precoFinal,
@@ -47,12 +47,13 @@ export function calcularDesconto(
     }
 
     case "PERCENTUAL": {
-      const desconto = Math.round(precoOriginal * (offer.percentualDesconto / 100));
+      const percentual = offer.percentualDesconto ?? 0;
+      const desconto = Math.round(precoOriginal * (percentual / 100));
       const precoFinal = precoOriginal - desconto;
       return {
         precoFinal,
         descontoTotal: desconto * quantidade,
-        descricaoDesconto: `${offer.percentualDesconto}% OFF`,
+        descricaoDesconto: `${percentual}% OFF`,
       };
     }
 
@@ -74,12 +75,13 @@ export function calcularDesconto(
     }
 
     case "DESCONTO_SEGUNDO": {
+      const percentual = offer.percentualDesconto ?? 0;
       if (quantidade < 2) {
         return { precoFinal: precoOriginal, descontoTotal: 0, descricaoDesconto: `${offer.percentualDesconto}% no 2º item` };
       }
       // Desconto aplicado nos itens pares (2º, 4º, etc.)
       const itensComDesconto = Math.floor(quantidade / 2);
-      const desconto = Math.round(precoOriginal * (offer.percentualDesconto / 100));
+      const desconto = Math.round(precoOriginal * (percentual / 100));
       const descontoTotal = desconto * itensComDesconto;
       return {
         precoFinal: precoOriginal,
