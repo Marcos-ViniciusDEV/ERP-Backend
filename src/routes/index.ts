@@ -23,6 +23,7 @@ import { analyticsRouter } from "./analytics.routes";
 import { empresasRouter } from "./empresas.routes";
 import { employeesRouter } from "./employees.routes";
 import { whatsappRouter } from "./whatsapp.routes";
+import { saasRouter } from "./saas.routes";
 
 
 import { authenticate } from "../middleware/auth.middleware";
@@ -31,6 +32,7 @@ import { requireTenant } from "../middleware/tenant.middleware";
 export const appRouter = Router();
 
 appRouter.use("/auth", authRouter);
+appRouter.use("/saas", saasRouter);
 appRouter.use("/empresas", empresasRouter); // Inclui ativação de PDV e admin de tenants
 
 // Proteger todas as rotas abaixo com autenticação e contexto de empresa

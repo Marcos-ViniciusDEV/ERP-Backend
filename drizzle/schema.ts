@@ -24,6 +24,13 @@ export const empresas = mysqlTable("empresas", {
   faturamentoMensal: varchar("faturamentoMensal", { length: 50 }),
   vendedores: int("vendedores").default(0),
   ativo: boolean("ativo").default(true).notNull(),
+  bloqueado: boolean("bloqueado").default(false).notNull(),
+  motivoBloqueio: text("motivoBloqueio"),
+  dataBloqueio: timestamp("dataBloqueio"),
+  dataDesbloqueio: timestamp("dataDesbloqueio"),
+  limiteUsuarios: int("limiteUsuarios").default(5),
+  limitePdvs: int("limitePdvs").default(2),
+  limiteProdutos: int("limiteProdutos").default(1000),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -46,6 +53,76 @@ export const pdvsAtivos = mysqlTable("pdvs_ativos", {
 
 export type PdvAtivo = typeof pdvsAtivos.$inferSelect;
 export type InsertPdvAtivo = typeof pdvsAtivos.$inferInsert;
+
+/**
+ * Planos do SaaS.
+ */
+export const planosSaas = mysqlTable("planos_saas", {
+  id: int("id").autoincrement().primaryKey(),
+  nome: varchar("nome", { length: 100 }).notNull(),
+  codigo: varchar("codigo", { length: 30 }).notNull().unique(),
+  descricao: text("descricao"),
+  precoMensal: int("precoMensal").notNull().default(0),
+  precoAnual: int("precoAnual").default(0),
+  limiteUsuarios: int("limiteUsuarios").notNull().default(1),
+  limitePdvs: int("limitePdvs").notNull().default(1),
+  limiteProdutos: int("limiteProdutos").notNull().default(500),
+  modulosPermitidos: text("modulosPermitidos"),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PlanoSaas = typeof planosSaas.$inferSelect;
+export type InsertPlanoSaas = typeof planosSaas.$inferInsert;
+
+/**
+ * Assinaturas das empresas.
+ */
+export const assinaturas = mysqlTable("assinaturas", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  planoId: int("planoId").notNull().references(() => planosSaas.id),
+  status: mysqlEnum("status", [
+    "ATIVA",
+    "INADIMPLENTE",
+    "CANCELADA",
+    "SUSPENSA",
+    "TRIAL",
+  ]).default("TRIAL").notNull(),
+  dataInicio: timestamp("dataInicio").defaultNow().notNull(),
+  dataFim: timestamp("dataFim"),
+  dataProximoVencimento: timestamp("dataProximoVencimento"),
+  valorMensal: int("valorMensal").default(0),
+  diasTrial: int("diasTrial").default(7),
+  observacao: text("observacao"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Assinatura = typeof assinaturas.$inferSelect;
+export type InsertAssinatura = typeof assinaturas.$inferInsert;
+
+/**
+ * Licenças emitidas por empresa.
+ */
+export const licencas = mysqlTable("licencas", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  tipo: mysqlEnum("tipo", ["ERP_WEB", "PDV_DESKTOP", "PDV_MOBILE", "API"]).notNull(),
+  chave: varchar("chave", { length: 64 }).notNull().unique(),
+  status: mysqlEnum("status", ["ATIVA", "REVOGADA", "EXPIRADA"]).default("ATIVA").notNull(),
+  dispositivoNome: varchar("dispositivoNome", { length: 100 }),
+  dispositivoId: varchar("dispositivoId", { length: 100 }),
+  dataAtivacao: timestamp("dataAtivacao").defaultNow(),
+  dataExpiracao: timestamp("dataExpiracao"),
+  ultimoUso: timestamp("ultimoUso"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Licenca = typeof licencas.$inferSelect;
+export type InsertLicenca = typeof licencas.$inferInsert;
 
 /**
  * Core user table backing auth flow.

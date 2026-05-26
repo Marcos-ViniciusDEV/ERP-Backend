@@ -1,4 +1,7 @@
 import { Request, Response, NextFunction } from "express";
+import { eq } from "drizzle-orm";
+import { empresas } from "../../drizzle/schema";
+import { getDb } from "../libs/db";
 
 /**
  * Middleware de Tenant (Multi-Empresa)
@@ -22,7 +25,7 @@ declare global {
  * Middleware padrão para rotas de negócio.
  * Requer que o usuário tenha um empresaId válido no token.
  */
-export const requireTenant = (req: Request, res: Response, next: NextFunction) => {
+export const requireTenant = async (req: Request, res: Response, next: NextFunction) => {
   const user = req.user;
 
   if (!user) {
@@ -45,7 +48,34 @@ export const requireTenant = (req: Request, res: Response, next: NextFunction) =
   }
 
   req.empresaId = user.empresaId;
-  next();
+
+  try {
+    const db = await getDb();
+    if (!db) throw new Error("Database not available");
+
+    const [empresa] = await db
+      .select({
+        bloqueado: empresas.bloqueado,
+        motivoBloqueio: empresas.motivoBloqueio,
+      })
+      .from(empresas)
+      .where(eq(empresas.id, req.empresaId))
+      .limit(1);
+
+    if (empresa?.bloqueado) {
+      res.status(403).json({
+        error: "Empresa bloqueada por inadimplência",
+        code: "EMPRESA_BLOQUEADA",
+        motivo: empresa.motivoBloqueio,
+      });
+      return;
+    }
+
+    next();
+  } catch (error) {
+    console.error("[Tenant Middleware] Error:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 };
 
 /**
