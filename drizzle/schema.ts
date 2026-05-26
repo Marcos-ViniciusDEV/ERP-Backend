@@ -190,6 +190,17 @@ export const produtos = mysqlTable("produtos", {
   custoContabil: int("custoContabil").default(0),
   custoOperacional: int("custoOperacional").default(0),
   custoFiscal: int("custoFiscal").default(0),
+  ncm: varchar("ncm", { length: 8 }),
+  cest: varchar("cest", { length: 7 }),
+  origem: int("origem").default(0),
+  cstIcms: varchar("cstIcms", { length: 4 }),
+  csosnIcms: varchar("csosnIcms", { length: 4 }),
+  cfopPadraoVenda: varchar("cfopPadraoVenda", { length: 4 }),
+  aliquotaIcms: int("aliquotaIcms").default(0), // percentual com 2 casas, ex: 1800 = 18%
+  aliquotaPis: int("aliquotaPis").default(0),
+  aliquotaCofins: int("aliquotaCofins").default(0),
+  pisCst: varchar("pisCst", { length: 2 }),
+  cofinsCst: varchar("cofinsCst", { length: 2 }),
   estoque: int("estoque").notNull().default(0),
   estoqueLoja: int("estoqueLoja").default(0),
   estoqueDeposito: int("estoqueDeposito").default(0),
@@ -352,6 +363,58 @@ export const itensVenda = mysqlTable("itens_venda", {
 
 export type ItemVenda = typeof itensVenda.$inferSelect;
 export type InsertItemVenda = typeof itensVenda.$inferInsert;
+
+/**
+ * Configuracoes fiscais por empresa.
+ */
+export const configuracoesFiscais = mysqlTable("configuracoes_fiscais", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  habilitarNfce: boolean("habilitarNfce").default(false).notNull(),
+  ambiente: mysqlEnum("ambiente", ["HOMOLOGACAO", "PRODUCAO"]).default("HOMOLOGACAO").notNull(),
+  regimeTributario: mysqlEnum("regimeTributario", ["SIMPLES_NACIONAL", "LUCRO_PRESUMIDO", "LUCRO_REAL"]).default("SIMPLES_NACIONAL").notNull(),
+  certificadoDigitalCaminho: varchar("certificadoDigitalCaminho", { length: 500 }),
+  certificadoDigitalSenha: text("certificadoDigitalSenha"),
+  certificadoValidade: timestamp("certificadoValidade"),
+  proximoNumeroNfce: int("proximoNumeroNfce").default(1).notNull(),
+  proximoNumeroNfe: int("proximoNumeroNfe").default(1).notNull(),
+  serieNfce: int("serieNfce").default(1).notNull(),
+  serieNfe: int("serieNfe").default(1).notNull(),
+  idTokenIsc: varchar("idTokenIsc", { length: 10 }),
+  csc: varchar("csc", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ConfiguracaoFiscal = typeof configuracoesFiscais.$inferSelect;
+export type InsertConfiguracaoFiscal = typeof configuracoesFiscais.$inferInsert;
+
+/**
+ * Documentos fiscais gerados, autorizados, rejeitados ou cancelados.
+ */
+export const documentosFiscais = mysqlTable("documentos_fiscais", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  vendaId: int("vendaId").references(() => vendas.id),
+  modelo: mysqlEnum("modelo", ["NFE", "NFCE"]).notNull(),
+  ambiente: mysqlEnum("ambiente", ["HOMOLOGACAO", "PRODUCAO"]).default("HOMOLOGACAO").notNull(),
+  status: mysqlEnum("status", ["RASCUNHO", "PENDENTE", "VALIDACAO_FALHOU", "PRONTA_PARA_EMISSAO", "AUTORIZADA", "REJEITADA", "CANCELADA", "CONTINGENCIA"]).default("RASCUNHO").notNull(),
+  numero: int("numero"),
+  serie: int("serie"),
+  chaveAcesso: varchar("chaveAcesso", { length: 60 }),
+  protocolo: varchar("protocolo", { length: 80 }),
+  motivoStatus: text("motivoStatus"),
+  xml: text("xml"),
+  danfeUrl: varchar("danfeUrl", { length: 500 }),
+  justificativaCancelamento: text("justificativaCancelamento"),
+  emitidaEm: timestamp("emitidaEm"),
+  canceladaEm: timestamp("canceladaEm"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DocumentoFiscal = typeof documentosFiscais.$inferSelect;
+export type InsertDocumentoFiscal = typeof documentosFiscais.$inferInsert;
 
 /**
  * Movimentação de Caixa (Sangrias e Reforços).

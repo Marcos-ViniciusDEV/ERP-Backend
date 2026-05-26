@@ -25,6 +25,8 @@ import { employeesRouter } from "./employees.routes";
 import { whatsappRouter } from "./whatsapp.routes";
 import { saasRouter } from "./saas.routes";
 import { supportRouter } from "./support.routes";
+import { reportsRouter } from "./reports.routes";
+import { fiscalRouter } from "./fiscal.routes";
 
 
 import { authenticate } from "../middleware/auth.middleware";
@@ -62,3 +64,5 @@ appRouter.use("/analytics", analyticsRouter);
 appRouter.use("/funcionarios", employeesRouter);
 appRouter.use("/whatsapp", whatsappRouter);
 appRouter.use("/support", supportRouter);
+appRouter.use("/reports", reportsRouter);
+appRouter.use("/fiscal", fiscalRouter);

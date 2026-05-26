@@ -6,6 +6,7 @@ import {
   itensVenda,
   movimentacoesCaixa,
   movimentacoesEstoque,
+  configuracoesFiscais,
 } from "../../drizzle/schema";
 import { eq, and, sql } from "drizzle-orm";
 import type { VendaPDV, MovimentoCaixaPDV } from "../zod/pdv.schema";
@@ -33,6 +34,17 @@ export async function getCargaInicial(empresaId: number) {
       unidade: produtos.unidade,
       estoque: produtos.estoque,
       ativo: produtos.ativo,
+      ncm: produtos.ncm,
+      cest: produtos.cest,
+      origem: produtos.origem,
+      cstIcms: produtos.cstIcms,
+      csosnIcms: produtos.csosnIcms,
+      cfopPadraoVenda: produtos.cfopPadraoVenda,
+      aliquotaIcms: produtos.aliquotaIcms,
+      aliquotaPis: produtos.aliquotaPis,
+      aliquotaCofins: produtos.aliquotaCofins,
+      pisCst: produtos.pisCst,
+      cofinsCst: produtos.cofinsCst,
     })
     .from(produtos)
     .where(eq(produtos.empresaId, empresaId));
@@ -58,9 +70,41 @@ export async function getCargaInicial(empresaId: number) {
     role: u.role,
   }));
 
+  const [configuracaoFiscal] = await db
+    .select({
+      habilitarNfce: configuracoesFiscais.habilitarNfce,
+      ambiente: configuracoesFiscais.ambiente,
+      regimeTributario: configuracoesFiscais.regimeTributario,
+      serieNfce: configuracoesFiscais.serieNfce,
+      serieNfe: configuracoesFiscais.serieNfe,
+      proximoNumeroNfce: configuracoesFiscais.proximoNumeroNfce,
+      proximoNumeroNfe: configuracoesFiscais.proximoNumeroNfe,
+      idTokenIsc: configuracoesFiscais.idTokenIsc,
+      cscConfigurado: sql<boolean>`case when ${configuracoesFiscais.csc} is null or ${configuracoesFiscais.csc} = '' then false else true end`,
+      certificadoConfigurado: sql<boolean>`case when ${configuracoesFiscais.certificadoDigitalCaminho} is null or ${configuracoesFiscais.certificadoDigitalCaminho} = '' then false else true end`,
+      certificadoValidade: configuracoesFiscais.certificadoValidade,
+    })
+    .from(configuracoesFiscais)
+    .where(eq(configuracoesFiscais.empresaId, empresaId))
+    .limit(1);
+
   return {
     produtos: produtosAtivos,
     usuarios: usuariosFormatados,
+    configuracaoFiscal: configuracaoFiscal || {
+      habilitarNfce: false,
+      ambiente: "HOMOLOGACAO",
+      regimeTributario: "SIMPLES_NACIONAL",
+      serieNfce: 1,
+      serieNfe: 1,
+      proximoNumeroNfce: 1,
+      proximoNumeroNfe: 1,
+      idTokenIsc: null,
+      cscConfigurado: false,
+      certificadoConfigurado: false,
+      certificadoValidade: null,
+    },
+    fiscalCargaGeradaEm: new Date().toISOString(),
     formasPagamento: [
       { id: 1, nome: "Dinheiro", tipo: "DINHEIRO" },
       { id: 2, nome: "Débito", tipo: "DEBITO" },
