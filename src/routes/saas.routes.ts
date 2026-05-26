@@ -31,3 +31,10 @@ saasRouter.patch("/pdvs/:id", saasController.updatePdv);
 saasRouter.get("/licencas", saasController.listLicencas);
 saasRouter.post("/licencas", saasController.createLicenca);
 saasRouter.patch("/licencas/:id/revogar", saasController.revogarLicenca);
+
+saasRouter.get("/support/tickets", saasController.listSupportTickets);
+saasRouter.patch("/support/tickets/:id", saasController.updateSupportTicket);
+saasRouter.get("/support/tutorials", saasController.listSupportTutorials);
+saasRouter.post("/support/tutorials", saasController.createSupportTutorial);
+saasRouter.patch("/support/tutorials/:id", saasController.updateSupportTutorial);
+saasRouter.delete("/support/tutorials/:id", saasController.deleteSupportTutorial);

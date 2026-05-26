@@ -740,3 +740,68 @@ export const whatsappConfigs = mysqlTable("whatsapp_configs", {
 
 export type WhatsappConfig = typeof whatsappConfigs.$inferSelect;
 export type InsertWhatsappConfig = typeof whatsappConfigs.$inferInsert;
+
+/**
+ * Chamados da Central de Suporte.
+ */
+export const supportTickets = mysqlTable("support_tickets", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  usuarioId: int("usuarioId").references(() => users.id),
+  tipo: mysqlEnum("tipo", ["SUPORTE", "BUG", "MELHORIA"]).default("SUPORTE").notNull(),
+  titulo: varchar("titulo", { length: 255 }).notNull(),
+  descricao: text("descricao").notNull(),
+  categoria: varchar("categoria", { length: 100 }),
+  prioridade: mysqlEnum("prioridade", ["BAIXA", "MEDIA", "ALTA", "CRITICA"]).default("MEDIA").notNull(),
+  status: mysqlEnum("status", ["ABERTO", "EM_ANALISE", "EM_ANDAMENTO", "RESOLVIDO", "FECHADO"]).default("ABERTO").notNull(),
+  modulo: varchar("modulo", { length: 100 }),
+  passosReproducao: text("passosReproducao"),
+  resposta: text("resposta"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SupportTicket = typeof supportTickets.$inferSelect;
+export type InsertSupportTicket = typeof supportTickets.$inferInsert;
+
+/**
+ * Base de conhecimento da Central de Suporte.
+ */
+export const supportArticles = mysqlTable("support_articles", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").references(() => empresas.id),
+  titulo: varchar("titulo", { length: 255 }).notNull(),
+  resumo: text("resumo"),
+  conteudo: text("conteudo").notNull(),
+  categoria: varchar("categoria", { length: 100 }),
+  tags: text("tags"),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SupportArticle = typeof supportArticles.$inferSelect;
+export type InsertSupportArticle = typeof supportArticles.$inferInsert;
+
+/**
+ * Tutoriais rapidos da Central de Suporte.
+ */
+export const supportTutorials = mysqlTable("support_tutorials", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").references(() => empresas.id),
+  titulo: varchar("titulo", { length: 255 }).notNull(),
+  descricao: text("descricao"),
+  conteudo: text("conteudo").notNull(),
+  youtubeUrl: varchar("youtubeUrl", { length: 500 }),
+  youtubeVideoId: varchar("youtubeVideoId", { length: 32 }),
+  modulo: varchar("modulo", { length: 100 }),
+  tempoEstimado: varchar("tempoEstimado", { length: 50 }),
+  fixado: boolean("fixado").default(false).notNull(),
+  ordem: int("ordem").default(0),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SupportTutorial = typeof supportTutorials.$inferSelect;
+export type InsertSupportTutorial = typeof supportTutorials.$inferInsert;

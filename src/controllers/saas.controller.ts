@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, like, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getDb } from "../libs/db";
 import {
@@ -8,6 +8,8 @@ import {
   licencas,
   pdvsAtivos,
   planosSaas,
+  supportTickets,
+  supportTutorials,
   users,
 } from "../../drizzle/schema";
 import { hashPassword } from "../libs/password";
@@ -22,6 +24,22 @@ const requireDb = async () => {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   return db;
+};
+
+const extractYouTubeVideoId = (url?: string | null) => {
+  if (!url) return null;
+  const value = String(url).trim();
+  const patterns = [
+    /youtu\.be\/([a-zA-Z0-9_-]{6,})/,
+    /youtube\.com\/watch\?v=([a-zA-Z0-9_-]{6,})/,
+    /youtube\.com\/embed\/([a-zA-Z0-9_-]{6,})/,
+    /youtube\.com\/shorts\/([a-zA-Z0-9_-]{6,})/,
+  ];
+  for (const pattern of patterns) {
+    const match = value.match(pattern);
+    if (match?.[1]) return match[1].slice(0, 32);
+  }
+  return value.length <= 32 && /^[a-zA-Z0-9_-]+$/.test(value) ? value : null;
 };
 
 export const saasController = {
@@ -419,6 +437,174 @@ export const saasController = {
     try {
       const db = await requireDb();
       await db.update(licencas).set({ status: "REVOGADA" }).where(eq(licencas.id, Number(req.params.id)));
+      res.json({ success: true });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+
+  async listSupportTickets(req: Request, res: Response) {
+    try {
+      const db = await requireDb();
+      const q = String(req.query.q ?? "").trim();
+      const tipo = req.query.tipo ? String(req.query.tipo) : undefined;
+      const status = req.query.status ? String(req.query.status) : undefined;
+
+      const filters = [];
+      if (tipo && tipo !== "TODOS") filters.push(eq(supportTickets.tipo, tipo as any));
+      if (status && status !== "TODOS") filters.push(eq(supportTickets.status, status as any));
+      if (q) {
+        const pattern = `%${q}%`;
+        filters.push(or(
+          like(supportTickets.titulo, pattern),
+          like(supportTickets.descricao, pattern),
+          like(supportTickets.categoria, pattern),
+          like(supportTickets.modulo, pattern)
+        ));
+      }
+
+      const rows = await db
+        .select({
+          ticket: supportTickets,
+          empresa: empresas,
+          usuario: users,
+        })
+        .from(supportTickets)
+        .leftJoin(empresas, eq(empresas.id, supportTickets.empresaId))
+        .leftJoin(users, eq(users.id, supportTickets.usuarioId))
+        .where(filters.length ? and(...filters) : undefined)
+        .orderBy(desc(supportTickets.createdAt));
+
+      res.json(rows);
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+
+  async updateSupportTicket(req: Request, res: Response) {
+    try {
+      const db = await requireDb();
+      await db
+        .update(supportTickets)
+        .set({
+          status: req.body.status,
+          prioridade: req.body.prioridade,
+          resposta: req.body.resposta,
+        })
+        .where(eq(supportTickets.id, Number(req.params.id)));
+
+      res.json({ success: true });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+
+  async listSupportTutorials(req: Request, res: Response) {
+    try {
+      const db = await requireDb();
+      const q = String(req.query.q ?? "").trim();
+      const modulo = req.query.modulo ? String(req.query.modulo) : undefined;
+
+      const filters = [];
+      if (modulo && modulo !== "TODOS") filters.push(eq(supportTutorials.modulo, modulo));
+      if (q) {
+        const pattern = `%${q}%`;
+        filters.push(or(
+          like(supportTutorials.titulo, pattern),
+          like(supportTutorials.descricao, pattern),
+          like(supportTutorials.conteudo, pattern),
+          like(supportTutorials.modulo, pattern)
+        ));
+      }
+
+      const rows = await db
+        .select({
+          tutorial: supportTutorials,
+          empresa: empresas,
+        })
+        .from(supportTutorials)
+        .leftJoin(empresas, eq(empresas.id, supportTutorials.empresaId))
+        .where(filters.length ? and(...filters) : undefined)
+        .orderBy(desc(supportTutorials.fixado), desc(supportTutorials.ordem), desc(supportTutorials.createdAt));
+
+      res.json(rows);
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+
+  async createSupportTutorial(req: Request, res: Response) {
+    try {
+      const db = await requireDb();
+      const youtubeVideoId = extractYouTubeVideoId(req.body.youtubeUrl ?? req.body.youtubeVideoId);
+      if (!req.body.titulo || !youtubeVideoId) {
+        res.status(400).json({ error: "Titulo e URL do YouTube sao obrigatorios" });
+        return;
+      }
+
+      const [result] = await db.insert(supportTutorials).values({
+        empresaId: req.body.empresaId ? Number(req.body.empresaId) : null,
+        titulo: req.body.titulo,
+        descricao: req.body.descricao,
+        conteudo: req.body.conteudo || req.body.descricao || "Video tutorial",
+        youtubeUrl: req.body.youtubeUrl,
+        youtubeVideoId,
+        modulo: req.body.modulo,
+        tempoEstimado: req.body.tempoEstimado,
+        fixado: Boolean(req.body.fixado),
+        ordem: req.body.ordem ? Number(req.body.ordem) : 0,
+        ativo: req.body.ativo ?? true,
+      } as any);
+
+      res.status(201).json({ success: true, id: result.insertId });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+
+  async updateSupportTutorial(req: Request, res: Response) {
+    try {
+      const db = await requireDb();
+      const youtubeVideoId = req.body.youtubeUrl || req.body.youtubeVideoId
+        ? extractYouTubeVideoId(req.body.youtubeUrl ?? req.body.youtubeVideoId)
+        : undefined;
+
+      if ((req.body.youtubeUrl || req.body.youtubeVideoId) && !youtubeVideoId) {
+        res.status(400).json({ error: "URL do YouTube invalida" });
+        return;
+      }
+
+      await db
+        .update(supportTutorials)
+        .set({
+          empresaId: req.body.empresaId ? Number(req.body.empresaId) : null,
+          titulo: req.body.titulo,
+          descricao: req.body.descricao,
+          conteudo: req.body.conteudo || req.body.descricao || "Video tutorial",
+          youtubeUrl: req.body.youtubeUrl,
+          youtubeVideoId,
+          modulo: req.body.modulo,
+          tempoEstimado: req.body.tempoEstimado,
+          fixado: req.body.fixado,
+          ordem: req.body.ordem ? Number(req.body.ordem) : 0,
+          ativo: req.body.ativo,
+        } as any)
+        .where(eq(supportTutorials.id, Number(req.params.id)));
+
+      res.json({ success: true });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+
+  async deleteSupportTutorial(req: Request, res: Response) {
+    try {
+      const db = await requireDb();
+      await db
+        .update(supportTutorials)
+        .set({ ativo: false })
+        .where(eq(supportTutorials.id, Number(req.params.id)));
+
       res.json({ success: true });
     } catch (error) {
       handleError(res, error);

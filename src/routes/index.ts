@@ -24,6 +24,7 @@ import { empresasRouter } from "./empresas.routes";
 import { employeesRouter } from "./employees.routes";
 import { whatsappRouter } from "./whatsapp.routes";
 import { saasRouter } from "./saas.routes";
+import { supportRouter } from "./support.routes";
 
 
 import { authenticate } from "../middleware/auth.middleware";
@@ -60,3 +61,4 @@ appRouter.use("/returns", returnsRouter);
 appRouter.use("/analytics", analyticsRouter);
 appRouter.use("/funcionarios", employeesRouter);
 appRouter.use("/whatsapp", whatsappRouter);
+appRouter.use("/support", supportRouter);
