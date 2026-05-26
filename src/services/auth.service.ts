@@ -56,6 +56,16 @@ function getTokenSecret() {
   if (!secret) {
     throw new Error("JWT_SECRET environment variable is not set");
   }
+
+  const isDefaultSecret = secret.includes("change-in-production") || secret === "your-secret-key-change-in-production";
+  if (ENV.isProduction && (isDefaultSecret || secret.length < 32)) {
+    throw new Error("JWT_SECRET must be strong and unique in production");
+  }
+
+  if (!ENV.isProduction && secret.length < 32) {
+    console.warn("[Security] JWT_SECRET should have at least 32 characters.");
+  }
+
   return new TextEncoder().encode(secret);
 }
 

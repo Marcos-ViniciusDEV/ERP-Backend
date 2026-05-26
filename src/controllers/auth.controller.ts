@@ -14,10 +14,10 @@ export const login = async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (error: any) {
     if (error instanceof ZodError) {
-      res.status(400).json({ error: (error as any).errors });
+      res.status(400).json({ error: "Dados de login invalidos" });
       return;
     }
-    res.status(401).json({ error: error.message });
+    res.status(401).json({ error: "Credenciais invalidas" });
   }
 };
 
@@ -30,7 +30,7 @@ export const validateCompany = async (req: Request, res: Response) => {
     const empresa = await authService.validateCompany(cnpj, senhaAcesso);
     res.json({ success: true, empresa });
   } catch (error: any) {
-    res.status(401).json({ error: error.message });
+    res.status(401).json({ error: "Empresa ou senha de acesso invalidas" });
   }
 };
 
@@ -41,7 +41,7 @@ export const register = async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (error: any) {
     if (error instanceof ZodError) {
-      res.status(400).json({ error: (error as any).errors });
+      res.status(400).json({ error: "Dados de cadastro invalidos" });
       return;
     }
     res.status(400).json({ error: error.message });

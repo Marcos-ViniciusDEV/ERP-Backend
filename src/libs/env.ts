@@ -28,7 +28,22 @@ export const ENV = {
   cookieSecret: process.env.COOKIE_SECRET ?? process.env.JWT_SECRET ?? "your-cookie-secret-change-in-production",
 
   /** Tempo de expiração do token JWT (ex: "7d", "24h", "60m") */
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "7d",
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "4h",
+
+  /** Origens HTTP permitidas para CORS, separadas por virgula */
+  corsOrigins: (
+    process.env.CORS_ORIGINS ??
+    "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173"
+  )
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+
+  /** Limites de defesa contra abuso */
+  rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS ?? 15 * 60 * 1000),
+  rateLimitMax: Number(process.env.RATE_LIMIT_MAX ?? (process.env.NODE_ENV === "production" ? 300 : 2000)),
+  authRateLimitWindowMs: Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS ?? 60 * 60 * 1000),
+  authRateLimitMax: Number(process.env.AUTH_RATE_LIMIT_MAX ?? 20),
 
   /** URL de conexão do banco MySQL */
   databaseUrl: process.env.DATABASE_URL ?? "",
