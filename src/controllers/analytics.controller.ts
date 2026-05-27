@@ -112,3 +112,99 @@ export async function getFinancialSummary(req: Request, res: Response) {
   }
 }
 
+const analyticsQuerySchema = z.object({
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  pdvId: z.string().optional(),
+  formaPagamento: z.string().optional(),
+  produtoId: z.coerce.number().optional(),
+  departamentoId: z.coerce.number().optional(),
+  operadorId: z.coerce.number().optional(),
+  limit: z.coerce.number().optional(),
+  marginThreshold: z.coerce.number().optional(),
+  days: z.coerce.number().optional(),
+  leadTimeDays: z.coerce.number().optional(),
+});
+
+const parseAnalyticsQuery = (req: Request) => analyticsQuerySchema.parse(req.query);
+
+export async function getDre(req: Request, res: Response) {
+  try {
+    const empresaId = req.user?.empresaId || req.empresaId || 1;
+    const result = await analyticsService.getDre(empresaId, parseAnalyticsQuery(req));
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+export async function getProductMargins(req: Request, res: Response) {
+  try {
+    const empresaId = req.user?.empresaId || req.empresaId || 1;
+    const result = await analyticsService.getProductMargins(empresaId, parseAnalyticsQuery(req));
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+export async function getProfitPeriod(req: Request, res: Response) {
+  try {
+    const empresaId = req.user?.empresaId || req.empresaId || 1;
+    const result = await analyticsService.getProfitByPeriod(empresaId, parseAnalyticsQuery(req));
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+export async function getLowMarginProducts(req: Request, res: Response) {
+  try {
+    const empresaId = req.user?.empresaId || req.empresaId || 1;
+    const result = await analyticsService.getLowMarginProducts(empresaId, parseAnalyticsQuery(req));
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+export async function getOperatorsRisk(req: Request, res: Response) {
+  try {
+    const empresaId = req.user?.empresaId || req.empresaId || 1;
+    const result = await analyticsService.getOperatorsRisk(empresaId, parseAnalyticsQuery(req));
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+export async function getCustomerRanking(req: Request, res: Response) {
+  try {
+    const empresaId = req.user?.empresaId || req.empresaId || 1;
+    const result = await analyticsService.getCustomerRanking(empresaId, parseAnalyticsQuery(req));
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+export async function getStockRuptureForecast(req: Request, res: Response) {
+  try {
+    const empresaId = req.user?.empresaId || req.empresaId || 1;
+    const result = await analyticsService.getStockRuptureForecast(empresaId, parseAnalyticsQuery(req));
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+export async function getManagementAnalytics(req: Request, res: Response) {
+  try {
+    const empresaId = req.user?.empresaId || req.empresaId || 1;
+    const result = await analyticsService.getManagementAnalytics(empresaId, parseAnalyticsQuery(req));
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
