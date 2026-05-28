@@ -27,6 +27,7 @@ import { saasRouter } from "./saas.routes";
 import { supportRouter } from "./support.routes";
 import { reportsRouter } from "./reports.routes";
 import { fiscalRouter } from "./fiscal.routes";
+import { pagamentosRouter } from "./pagamentos.routes";
 
 
 import { authenticate } from "../middleware/auth.middleware";
@@ -66,3 +67,4 @@ appRouter.use("/whatsapp", whatsappRouter);
 appRouter.use("/support", supportRouter);
 appRouter.use("/reports", reportsRouter);
 appRouter.use("/fiscal", fiscalRouter);
+appRouter.use("/pagamentos", pagamentosRouter);

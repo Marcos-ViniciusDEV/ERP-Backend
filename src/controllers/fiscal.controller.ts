@@ -60,6 +60,37 @@ export async function prepare(req: Request, res: Response) {
   }
 }
 
+export async function emitir(req: Request, res: Response) {
+  try {
+    const input = fiscalPrepareSchema.parse(req.body);
+    const result = await fiscalService.emitirNotaDaVenda(req.empresaId!, input);
+    res.status(201).json(result);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || "Erro ao criar nota fiscal" });
+  }
+}
+
+export async function xml(req: Request, res: Response) {
+  try {
+    const document = await fiscalService.getDocumentXml(req.empresaId!, Number(req.params.id));
+    res.setHeader("Content-Type", "application/xml; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename=nota-${document.id}.xml`);
+    res.send(document.xml);
+  } catch (error: any) {
+    res.status(404).json({ error: error.message || "XML nao encontrado" });
+  }
+}
+
+export async function danfe(req: Request, res: Response) {
+  try {
+    const html = await fiscalService.getDocumentDanfeHtml(req.empresaId!, Number(req.params.id));
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(html);
+  } catch (error: any) {
+    res.status(404).json({ error: error.message || "DANFE nao encontrado" });
+  }
+}
+
 export async function cancel(req: Request, res: Response) {
   try {
     const input = fiscalCancelSchema.parse(req.body);

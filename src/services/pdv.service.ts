@@ -7,9 +7,14 @@ import {
   movimentacoesCaixa,
   movimentacoesEstoque,
   configuracoesFiscais,
+  empresas,
+  pinpadPareamentoKeys,
+  terminaisPagamento,
 } from "../../drizzle/schema";
+import { createHash, randomBytes } from "crypto";
 import { eq, and, sql } from "drizzle-orm";
 import type { VendaPDV, MovimentoCaixaPDV } from "../zod/pdv.schema";
+import * as pagamentosService from "./pagamentos.service";
 
 /**
  * Retorna dados para carga inicial do PDV
@@ -88,7 +93,35 @@ export async function getCargaInicial(empresaId: number) {
     .where(eq(configuracoesFiscais.empresaId, empresaId))
     .limit(1);
 
+  const [empresa] = await db
+    .select({
+      id: empresas.id,
+      cnpj: empresas.cnpj,
+      razaoSocial: empresas.razaoSocial,
+      nomeFantasia: empresas.nomeFantasia,
+    })
+    .from(empresas)
+    .where(eq(empresas.id, empresaId))
+    .limit(1);
+
+  const configuracoesPagamento = await pagamentosService.getPaymentConfigBundle(empresaId);
+  const formasPagamentoPdv = configuracoesPagamento.formasPagamento
+    .filter((forma: any) => forma.ativo)
+    .map((forma: any) => ({
+      id: forma.id,
+      nome: forma.nome,
+      tipo: String(forma.tipo).toUpperCase(),
+      codigo: forma.codigo,
+      modoCaptura: forma.modoCaptura,
+      permiteTroco: forma.permiteTroco,
+      permiteParcelamento: forma.permiteParcelamento,
+      maxParcelas: forma.maxParcelas,
+      exigirAutorizacao: forma.exigirAutorizacao,
+      ordem: forma.ordem,
+    }));
+
   return {
+    empresa: empresa || null,
     produtos: produtosAtivos,
     usuarios: usuariosFormatados,
     configuracaoFiscal: configuracaoFiscal || {
@@ -105,13 +138,132 @@ export async function getCargaInicial(empresaId: number) {
       certificadoValidade: null,
     },
     fiscalCargaGeradaEm: new Date().toISOString(),
-    formasPagamento: [
+    configuracoesPagamento: {
+      empresaId,
+      cnpjEmpresa: empresa?.cnpj || null,
+      versaoCarga: configuracoesPagamento.versaoCarga,
+      habilitarPagamentosManuais: configuracoesPagamento.habilitarPagamentosManuais,
+      habilitarTef: configuracoesPagamento.habilitarTef,
+      habilitarPosApi: configuracoesPagamento.habilitarPosApi,
+      habilitarPixIntegrado: configuracoesPagamento.habilitarPixIntegrado,
+      modoPadraoCartao: configuracoesPagamento.modoPadraoCartao,
+      exigirNsuNoManual: configuracoesPagamento.exigirNsuNoManual,
+      permitirVendaOfflineCartaoManual: configuracoesPagamento.permitirVendaOfflineCartaoManual,
+      permitirVendaOfflineTef: configuracoesPagamento.permitirVendaOfflineTef,
+      formasPagamento: formasPagamentoPdv,
+      terminaisPagamento: configuracoesPagamento.terminaisPagamento,
+      adquirentes: configuracoesPagamento.adquirentes,
+      taxas: configuracoesPagamento.taxas,
+    },
+    formasPagamento: formasPagamentoPdv,
+    formasPagamentoLegado: [
       { id: 1, nome: "Dinheiro", tipo: "DINHEIRO" },
       { id: 2, nome: "Débito", tipo: "DEBITO" },
       { id: 3, nome: "Crédito", tipo: "CREDITO" },
       { id: 4, nome: "PIX", tipo: "PIX" },
     ],
   };
+}
+
+export async function getEmpresaIdentity(empresaId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [empresa] = await db
+    .select({ id: empresas.id, cnpj: empresas.cnpj, nomeFantasia: empresas.nomeFantasia, razaoSocial: empresas.razaoSocial })
+    .from(empresas)
+    .where(eq(empresas.id, empresaId))
+    .limit(1);
+  return empresa || null;
+}
+
+export async function generatePinpadPairingKey(empresaId: number, pdvId: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const cleanPdvId = String(pdvId || "").trim();
+  if (!cleanPdvId) throw new Error("pdvId e obrigatorio");
+
+  const [empresa] = await db
+    .select({ id: empresas.id, cnpj: empresas.cnpj, nomeFantasia: empresas.nomeFantasia })
+    .from(empresas)
+    .where(eq(empresas.id, empresaId))
+    .limit(1);
+
+  if (!empresa?.cnpj) throw new Error("Empresa/CNPJ nao encontrado para gerar chave do PinPad");
+
+  const [terminal] = await db
+    .select()
+    .from(terminaisPagamento)
+    .where(and(eq(terminaisPagamento.empresaId, empresaId), eq(terminaisPagamento.pdvId, cleanPdvId), eq(terminaisPagamento.ativo, true)))
+    .limit(1);
+
+  await db
+    .update(pinpadPareamentoKeys)
+    .set({ ativo: false })
+    .where(and(eq(pinpadPareamentoKeys.empresaId, empresaId), eq(pinpadPareamentoKeys.pdvId, cleanPdvId), eq(pinpadPareamentoKeys.ativo, true)));
+
+  const cnpjDigits = empresa.cnpj.replace(/\D/g, "");
+  const key = `PIN-${cnpjDigits.slice(-6)}-${cleanPdvId.toUpperCase()}-${randomBytes(3).toString("hex").toUpperCase()}-${randomBytes(3).toString("hex").toUpperCase()}`;
+  const hash = createHash("sha256").update(key).digest("hex");
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+  await db.insert(pinpadPareamentoKeys).values({
+    empresaId,
+    pdvId: cleanPdvId,
+    terminalPagamentoId: terminal?.id || null,
+    cnpjEmpresa: empresa.cnpj,
+    chaveHash: hash,
+    chavePrefixo: key.slice(0, Math.min(24, key.length)),
+    expiraEm: expiresAt,
+    ativo: true,
+  });
+
+  return {
+    pdvId: cleanPdvId,
+    cnpjEmpresa: empresa.cnpj,
+    nomeEmpresa: empresa.nomeFantasia,
+    terminal: terminal
+      ? {
+          id: terminal.id,
+          nomeTerminal: terminal.nomeTerminal,
+          tipo: terminal.tipo,
+          identificador: terminal.serialEquipamento || terminal.codigoTerminal || terminal.terminalTef || null,
+        }
+      : null,
+    pinpadKey: key,
+    expiraEm: expiresAt.toISOString(),
+    validadeMinutos: 30,
+    aviso: "A chave completa aparece somente agora. Depois sera exibido apenas o prefixo.",
+  };
+}
+
+export async function listPinpadPairingKeyStatus(empresaId: number, pdvIds: string[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (pdvIds.length === 0) return [];
+
+  const keys = await db.select().from(pinpadPareamentoKeys).where(eq(pinpadPareamentoKeys.empresaId, empresaId));
+  const now = Date.now();
+
+  return pdvIds.map((pdvId) => {
+    const key = keys
+      .filter((item) => item.pdvId === pdvId && item.ativo && !item.usadaEm)
+      .sort((a, b) => Number(b.createdAt) - Number(a.createdAt))[0];
+
+    if (!key) {
+      return { pdvId, possuiChaveAtiva: false, status: "Sem chave ativa" };
+    }
+
+    const expiraEm = new Date(key.expiraEm);
+    const expired = expiraEm.getTime() <= now;
+    return {
+      pdvId,
+      possuiChaveAtiva: !expired,
+      status: expired ? "Chave expirada" : "Chave ativa",
+      chavePrefixo: key.chavePrefixo,
+      expiraEm: expiraEm.toISOString(),
+    };
+  });
 }
 
 /**

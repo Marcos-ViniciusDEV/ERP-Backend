@@ -1,0 +1,21 @@
+CREATE TABLE IF NOT EXISTS `credenciais_pagamento` (
+  `id` int AUTO_INCREMENT PRIMARY KEY,
+  `empresaId` int NOT NULL,
+  `provedorId` int NOT NULL,
+  `adquirenteEmpresaId` int,
+  `ambiente` enum('homologacao','producao') NOT NULL DEFAULT 'producao',
+  `publicKey` varchar(255),
+  `clientId` varchar(255),
+  `clientSecretEncrypted` text,
+  `accessTokenEncrypted` text,
+  `webhookSecretEncrypted` text,
+  `statusValidacao` varchar(80) DEFAULT 'Pendente de configuracao',
+  `ultimaValidacaoEm` timestamp NULL,
+  `ultimoErro` text,
+  `ativo` boolean NOT NULL DEFAULT true,
+  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `credenciais_pagamento_empresa_fk` FOREIGN KEY (`empresaId`) REFERENCES `empresas`(`id`),
+  CONSTRAINT `credenciais_pagamento_provedor_fk` FOREIGN KEY (`provedorId`) REFERENCES `provedores_pagamento`(`id`),
+  CONSTRAINT `credenciais_pagamento_adquirente_fk` FOREIGN KEY (`adquirenteEmpresaId`) REFERENCES `adquirentes_empresa`(`id`)
+);

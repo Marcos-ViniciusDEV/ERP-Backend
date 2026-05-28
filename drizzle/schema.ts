@@ -417,6 +417,244 @@ export type DocumentoFiscal = typeof documentosFiscais.$inferSelect;
 export type InsertDocumentoFiscal = typeof documentosFiscais.$inferInsert;
 
 /**
+ * Provedores de pagamento disponiveis para configuracao.
+ */
+export const provedoresPagamento = mysqlTable("provedores_pagamento", {
+  id: int("id").autoincrement().primaryKey(),
+  codigo: varchar("codigo", { length: 50 }).notNull().unique(),
+  nome: varchar("nome", { length: 120 }).notNull(),
+  tipo: mysqlEnum("tipo", ["manual", "tef", "pos_api", "pix_gateway", "adquirente"]).notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  permitePix: boolean("permitePix").default(false).notNull(),
+  permiteCartao: boolean("permiteCartao").default(false).notNull(),
+  permiteEnvioValorPdv: boolean("permiteEnvioValorPdv").default(false).notNull(),
+  requerHomologacao: boolean("requerHomologacao").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ProvedorPagamento = typeof provedoresPagamento.$inferSelect;
+export type InsertProvedorPagamento = typeof provedoresPagamento.$inferInsert;
+
+/**
+ * Configuracao principal de pagamentos por empresa.
+ */
+export const configuracoesPagamentoEmpresa = mysqlTable("configuracoes_pagamento_empresa", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  habilitarPagamentosManuais: boolean("habilitarPagamentosManuais").default(true).notNull(),
+  habilitarTef: boolean("habilitarTef").default(false).notNull(),
+  habilitarPosApi: boolean("habilitarPosApi").default(false).notNull(),
+  habilitarPixIntegrado: boolean("habilitarPixIntegrado").default(false).notNull(),
+  modoPadraoCartao: mysqlEnum("modoPadraoCartao", ["manual", "tef", "pos_api"]).default("manual").notNull(),
+  exigirNsuNoManual: boolean("exigirNsuNoManual").default(false).notNull(),
+  permitirVendaOfflineCartaoManual: boolean("permitirVendaOfflineCartaoManual").default(true).notNull(),
+  permitirVendaOfflineTef: boolean("permitirVendaOfflineTef").default(false).notNull(),
+  enviarCargaAutomaticaPdv: boolean("enviarCargaAutomaticaPdv").default(true).notNull(),
+  versaoCarga: int("versaoCarga").default(1).notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ConfiguracaoPagamentoEmpresa = typeof configuracoesPagamentoEmpresa.$inferSelect;
+export type InsertConfiguracaoPagamentoEmpresa = typeof configuracoesPagamentoEmpresa.$inferInsert;
+
+/**
+ * Formas de pagamento que aparecem no PDV.
+ */
+export const formasPagamentoEmpresa = mysqlTable("formas_pagamento_empresa", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  codigo: varchar("codigo", { length: 50 }).notNull(),
+  nome: varchar("nome", { length: 120 }).notNull(),
+  tipo: mysqlEnum("tipo", ["dinheiro", "debito", "credito", "pix", "voucher", "outro"]).notNull(),
+  modoCaptura: mysqlEnum("modoCaptura", ["manual", "tef", "pos_api", "pix_integrado"]).default("manual").notNull(),
+  provedorId: int("provedorId").references(() => provedoresPagamento.id),
+  adquirenteId: int("adquirenteId"),
+  permiteTroco: boolean("permiteTroco").default(false).notNull(),
+  permiteParcelamento: boolean("permiteParcelamento").default(false).notNull(),
+  maxParcelas: int("maxParcelas").default(1).notNull(),
+  exigirAutorizacao: boolean("exigirAutorizacao").default(false).notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  ordem: int("ordem").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type FormaPagamentoEmpresa = typeof formasPagamentoEmpresa.$inferSelect;
+export type InsertFormaPagamentoEmpresa = typeof formasPagamentoEmpresa.$inferInsert;
+
+/**
+ * Adquirentes configuradas por empresa.
+ */
+export const adquirentesEmpresa = mysqlTable("adquirentes_empresa", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  provedorId: int("provedorId").references(() => provedoresPagamento.id),
+  nomeExibicao: varchar("nomeExibicao", { length: 120 }).notNull(),
+  cnpjCredenciadora: varchar("cnpjCredenciadora", { length: 18 }),
+  codigoEstabelecimento: varchar("codigoEstabelecimento", { length: 100 }),
+  ambiente: mysqlEnum("ambiente", ["homologacao", "producao"]).default("homologacao").notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AdquirenteEmpresa = typeof adquirentesEmpresa.$inferSelect;
+export type InsertAdquirenteEmpresa = typeof adquirentesEmpresa.$inferInsert;
+
+/**
+ * Taxas por adquirente/modalidade para previsao financeira.
+ */
+export const taxasAdquirentes = mysqlTable("taxas_adquirentes", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  adquirenteEmpresaId: int("adquirenteEmpresaId").references(() => adquirentesEmpresa.id),
+  modalidade: mysqlEnum("modalidade", ["debito", "credito_vista", "credito_parcelado", "pix"]).notNull(),
+  bandeira: varchar("bandeira", { length: 50 }),
+  parcelasInicio: int("parcelasInicio").default(1).notNull(),
+  parcelasFim: int("parcelasFim").default(1).notNull(),
+  taxaPercentual: int("taxaPercentual").default(0).notNull(),
+  taxaFixaCentavos: int("taxaFixaCentavos").default(0).notNull(),
+  prazoRecebimentoDias: int("prazoRecebimentoDias").default(0).notNull(),
+  origem: mysqlEnum("origem", ["manual", "api_provedor", "arquivo_importado", "ajuste_usuario"]).default("manual").notNull(),
+  provedorTaxaId: varchar("provedorTaxaId", { length: 120 }),
+  ultimaConsultaApiEm: timestamp("ultimaConsultaApiEm"),
+  ultimaConfirmacaoUsuarioEm: timestamp("ultimaConfirmacaoUsuarioEm"),
+  confirmadaPeloUsuarioId: int("confirmadaPeloUsuarioId").references(() => users.id),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type TaxaAdquirente = typeof taxasAdquirentes.$inferSelect;
+export type InsertTaxaAdquirente = typeof taxasAdquirentes.$inferInsert;
+
+export const historicoTaxasAdquirentes = mysqlTable("historico_taxas_adquirentes", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  taxaAdquirenteId: int("taxaAdquirenteId").references(() => taxasAdquirentes.id),
+  adquirenteEmpresaId: int("adquirenteEmpresaId").references(() => adquirentesEmpresa.id),
+  modalidade: varchar("modalidade", { length: 50 }).notNull(),
+  bandeira: varchar("bandeira", { length: 50 }),
+  parcelasInicio: int("parcelasInicio").default(1),
+  parcelasFim: int("parcelasFim").default(1),
+  taxaAnteriorPercentual: int("taxaAnteriorPercentual"),
+  taxaNovaPercentual: int("taxaNovaPercentual"),
+  taxaFixaAnteriorCentavos: int("taxaFixaAnteriorCentavos"),
+  taxaFixaNovaCentavos: int("taxaFixaNovaCentavos"),
+  prazoAnteriorDias: int("prazoAnteriorDias"),
+  prazoNovoDias: int("prazoNovoDias"),
+  origem: varchar("origem", { length: 50 }).notNull(),
+  payloadApi: text("payloadApi"),
+  alteradoPorUsuarioId: int("alteradoPorUsuarioId").references(() => users.id),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type HistoricoTaxaAdquirente = typeof historicoTaxasAdquirentes.$inferSelect;
+export type InsertHistoricoTaxaAdquirente = typeof historicoTaxasAdquirentes.$inferInsert;
+
+export const terminaisPagamento = mysqlTable("terminais_pagamento", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  pdvId: varchar("pdvId", { length: 50 }).notNull(),
+  nomeTerminal: varchar("nomeTerminal", { length: 120 }).notNull(),
+  tipo: mysqlEnum("tipo", ["manual", "tef", "pos_api"]).default("manual").notNull(),
+  provedorId: int("provedorId").references(() => provedoresPagamento.id),
+  adquirenteEmpresaId: int("adquirenteEmpresaId").references(() => adquirentesEmpresa.id),
+  serialEquipamento: varchar("serialEquipamento", { length: 120 }),
+  codigoTerminal: varchar("codigoTerminal", { length: 120 }),
+  ipTerminal: varchar("ipTerminal", { length: 60 }),
+  portaTerminal: int("portaTerminal"),
+  pathIntegradorLocal: varchar("pathIntegradorLocal", { length: 500 }),
+  estabelecimentoTef: varchar("estabelecimentoTef", { length: 120 }),
+  terminalTef: varchar("terminalTef", { length: 120 }),
+  ativo: boolean("ativo").default(true).notNull(),
+  ultimaCargaEnviadaEm: timestamp("ultimaCargaEnviadaEm"),
+  ultimoStatus: varchar("ultimoStatus", { length: 80 }).default("Nao configurado"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type TerminalPagamento = typeof terminaisPagamento.$inferSelect;
+export type InsertTerminalPagamento = typeof terminaisPagamento.$inferInsert;
+
+export const pinpadPareamentoKeys = mysqlTable("pinpad_pareamento_keys", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  pdvId: varchar("pdvId", { length: 50 }).notNull(),
+  terminalPagamentoId: int("terminalPagamentoId").references(() => terminaisPagamento.id),
+  cnpjEmpresa: varchar("cnpjEmpresa", { length: 18 }).notNull(),
+  chaveHash: varchar("chaveHash", { length: 128 }).notNull(),
+  chavePrefixo: varchar("chavePrefixo", { length: 40 }).notNull(),
+  expiraEm: timestamp("expiraEm").notNull(),
+  usadaEm: timestamp("usadaEm"),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type PinpadPareamentoKey = typeof pinpadPareamentoKeys.$inferSelect;
+export type InsertPinpadPareamentoKey = typeof pinpadPareamentoKeys.$inferInsert;
+
+export const credenciaisPagamento = mysqlTable("credenciais_pagamento", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  provedorId: int("provedorId").notNull().references(() => provedoresPagamento.id),
+  adquirenteEmpresaId: int("adquirenteEmpresaId").references(() => adquirentesEmpresa.id),
+  ambiente: mysqlEnum("ambiente", ["homologacao", "producao"]).default("producao").notNull(),
+  publicKey: varchar("publicKey", { length: 255 }),
+  clientId: varchar("clientId", { length: 255 }),
+  clientSecretEncrypted: text("clientSecretEncrypted"),
+  accessTokenEncrypted: text("accessTokenEncrypted"),
+  webhookSecretEncrypted: text("webhookSecretEncrypted"),
+  providerConfigJson: text("providerConfigJson"),
+  statusValidacao: varchar("statusValidacao", { length: 80 }).default("Pendente de configuracao"),
+  ultimaValidacaoEm: timestamp("ultimaValidacaoEm"),
+  ultimoErro: text("ultimoErro"),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CredencialPagamento = typeof credenciaisPagamento.$inferSelect;
+export type InsertCredencialPagamento = typeof credenciaisPagamento.$inferInsert;
+
+export const transacoesPagamento = mysqlTable("transacoes_pagamento", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  vendaId: int("vendaId").references(() => vendas.id),
+  vendaUuid: varchar("vendaUuid", { length: 36 }),
+  pdvId: varchar("pdvId", { length: 50 }),
+  terminalPagamentoId: int("terminalPagamentoId").references(() => terminaisPagamento.id),
+  formaPagamentoEmpresaId: int("formaPagamentoEmpresaId").references(() => formasPagamentoEmpresa.id),
+  provedorId: int("provedorId").references(() => provedoresPagamento.id),
+  adquirenteEmpresaId: int("adquirenteEmpresaId").references(() => adquirentesEmpresa.id),
+  tipo: mysqlEnum("tipo", ["dinheiro", "debito", "credito", "pix", "voucher", "outro"]).notNull(),
+  modoCaptura: mysqlEnum("modoCaptura", ["manual", "tef", "pos_api", "pix_integrado"]).default("manual").notNull(),
+  status: mysqlEnum("status", ["pendente", "aprovada", "negada", "cancelada", "estornada", "erro", "conciliada"]).default("aprovada").notNull(),
+  valorBrutoCentavos: int("valorBrutoCentavos").notNull(),
+  valorTaxaPrevistaCentavos: int("valorTaxaPrevistaCentavos").default(0).notNull(),
+  valorLiquidoPrevistoCentavos: int("valorLiquidoPrevistoCentavos").default(0).notNull(),
+  parcelas: int("parcelas").default(1).notNull(),
+  bandeira: varchar("bandeira", { length: 50 }),
+  nsu: varchar("nsu", { length: 80 }),
+  codigoAutorizacao: varchar("codigoAutorizacao", { length: 80 }),
+  tid: varchar("tid", { length: 120 }),
+  endToEndIdPix: varchar("endToEndIdPix", { length: 120 }),
+  qrCodePix: text("qrCodePix"),
+  payloadOriginal: text("payloadOriginal"),
+  erroCodigo: varchar("erroCodigo", { length: 80 }),
+  erroMensagem: text("erroMensagem"),
+  dataTransacao: timestamp("dataTransacao").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type TransacaoPagamento = typeof transacoesPagamento.$inferSelect;
+export type InsertTransacaoPagamento = typeof transacoesPagamento.$inferInsert;
+
+/**
  * Movimentação de Caixa (Sangrias e Reforços).
  */
 export const movimentacoesCaixa = mysqlTable("movimentacoes_caixa", {

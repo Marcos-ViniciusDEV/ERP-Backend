@@ -1,5 +1,5 @@
 import { and, desc, eq, sql } from "drizzle-orm";
-import { configuracoesFiscais, documentosFiscais, itensVenda, produtos, vendas } from "../../drizzle/schema";
+import { configuracoesFiscais, documentosFiscais, empresas, itensVenda, produtos, vendas } from "../../drizzle/schema";
 import { getDb } from "../libs/db";
 import type { FiscalConfigInput, FiscalPreflightInput, FiscalPrepareInput } from "../zod/fiscal.schema";
 
@@ -219,6 +219,108 @@ export async function prepareFiscalDocument(empresaId: number, input: FiscalPrep
   };
 }
 
+export async function emitirNotaDaVenda(empresaId: number, input: FiscalPrepareInput) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const config = await getConfig(empresaId);
+  const preflight = await preflightSale(empresaId, input);
+  if (!preflight.ok) {
+    const failed = await createFiscalDocument(empresaId, input, config, "VALIDACAO_FALHOU", preflight);
+    return {
+      document: failed,
+      preflight,
+      authorized: false,
+      message: "Nota nao criada para emissao porque existem bloqueios fiscais.",
+    };
+  }
+
+  const [existing] = await db
+    .select()
+    .from(documentosFiscais)
+    .where(and(
+      eq(documentosFiscais.empresaId, empresaId),
+      eq(documentosFiscais.vendaId, input.vendaId),
+      eq(documentosFiscais.modelo, input.modelo),
+      sql`${documentosFiscais.status} in ('PRONTA_PARA_EMISSAO','AUTORIZADA','CONTINGENCIA')`
+    ))
+    .limit(1);
+
+  if (existing) {
+    return {
+      document: existing,
+      preflight,
+      authorized: existing.status === "AUTORIZADA",
+      message: "Esta venda ja possui nota fiscal criada para este modelo.",
+    };
+  }
+
+  const shouldAuthorizeMock = config.ambiente === "HOMOLOGACAO" || Boolean(config.certificadoDigitalCaminho);
+  const status = input.emitirEmContingencia
+    ? "CONTINGENCIA"
+    : shouldAuthorizeMock
+      ? "AUTORIZADA"
+      : "PRONTA_PARA_EMISSAO";
+
+  const document = await createFiscalDocument(empresaId, input, config, status, preflight);
+
+  if (input.modelo === "NFCE" && document.chaveAcesso) {
+    await db
+      .update(vendas)
+      .set({ nfceNumero: String(document.numero || ""), nfceChave: document.chaveAcesso })
+      .where(and(eq(vendas.id, input.vendaId), eq(vendas.empresaId, empresaId)));
+  }
+
+  return {
+    document,
+    preflight,
+    authorized: status === "AUTORIZADA",
+    message: status === "AUTORIZADA"
+      ? "Nota fiscal criada e autorizada em modo controlado. Integracao SEFAZ real entra na proxima etapa."
+      : status === "CONTINGENCIA"
+        ? "Nota fiscal criada em contingencia para posterior transmissao."
+        : "Nota fiscal criada e pronta para transmissao quando certificado/mensageria estiverem configurados.",
+  };
+}
+
+async function createFiscalDocument(empresaId: number, input: FiscalPrepareInput, config: any, status: string, preflight: any) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const numero = input.modelo === "NFCE" ? config.proximoNumeroNfce : config.proximoNumeroNfe;
+  const serie = input.modelo === "NFCE" ? config.serieNfce : config.serieNfe;
+  const chaveAcesso = status === "VALIDACAO_FALHOU" ? null : await buildAccessKey(empresaId, input.modelo, numero, serie);
+  const protocolo = status === "AUTORIZADA" ? `ERP${Date.now()}` : null;
+  const xml = status === "VALIDACAO_FALHOU"
+    ? null
+    : await buildFiscalXml(empresaId, input.modelo, numero, serie, input.vendaId, chaveAcesso, protocolo);
+
+  const [insertResult] = await db.insert(documentosFiscais).values({
+    empresaId,
+    vendaId: input.vendaId,
+    modelo: input.modelo,
+    ambiente: config.ambiente,
+    status: status as any,
+    numero,
+    serie,
+    chaveAcesso,
+    protocolo,
+    motivoStatus: preflight.issues.map((issue: FiscalIssue) => `[${issue.severity}] ${issue.message}`).join("\n")
+      || (status === "AUTORIZADA" ? "Autorizada em fluxo fiscal controlado." : "Documento fiscal criado."),
+    xml,
+    danfeUrl: chaveAcesso ? `/api/fiscal/documentos/${chaveAcesso}/danfe` : null,
+    emitidaEm: status === "AUTORIZADA" || status === "CONTINGENCIA" ? new Date() : null,
+  });
+
+  if (status !== "VALIDACAO_FALHOU") {
+    await incrementFiscalNumber(empresaId, input.modelo);
+  }
+
+  const documentId = Number(insertResult.insertId);
+  const [document] = await db.select().from(documentosFiscais).where(eq(documentosFiscais.id, documentId)).limit(1);
+  return document;
+}
+
 export async function cancelDocument(empresaId: number, documentId: number, justificativa: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -246,6 +348,35 @@ export async function cancelDocument(empresaId: number, documentId: number, just
 
   const [updated] = await db.select().from(documentosFiscais).where(eq(documentosFiscais.id, documentId)).limit(1);
   return updated;
+}
+
+export async function getDocumentXml(empresaId: number, documentId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [document] = await db
+    .select()
+    .from(documentosFiscais)
+    .where(and(eq(documentosFiscais.id, documentId), eq(documentosFiscais.empresaId, empresaId)))
+    .limit(1);
+  if (!document) throw new Error("Documento fiscal nao encontrado");
+  if (!document.xml) throw new Error("Documento fiscal ainda nao possui XML");
+  return document;
+}
+
+export async function getDocumentDanfeHtml(empresaId: number, documentId: number) {
+  const document = await getDocumentXml(empresaId, documentId);
+  return [
+    "<!doctype html>",
+    "<html><head><meta charset=\"utf-8\"><title>DANFE</title>",
+    "<style>body{font-family:Arial,sans-serif;margin:24px;color:#111} .box{border:1px solid #333;padding:12px;margin:8px 0} h1{font-size:20px;margin:0 0 8px} .muted{color:#555;font-size:12px}</style>",
+    "</head><body>",
+    `<h1>DANFE ${document.modelo}</h1>`,
+    `<div class="box"><strong>Status:</strong> ${document.status}<br><strong>Ambiente:</strong> ${document.ambiente}<br><strong>Serie/Numero:</strong> ${document.serie}/${document.numero}</div>`,
+    `<div class="box"><strong>Chave de acesso:</strong><br>${document.chaveAcesso || "-"}</div>`,
+    `<div class="box"><strong>Protocolo:</strong> ${document.protocolo || "-"}</div>`,
+    "<p class=\"muted\">DANFE simplificado gerado pelo ERP. A impressao oficial sera finalizada na integracao SEFAZ/mensageria.</p>",
+    "</body></html>",
+  ].join("");
 }
 
 export async function getFiscalSummary(empresaId: number, month: number, year: number) {
@@ -296,4 +427,81 @@ function buildDraftXml(modelo: "NFE" | "NFCE", numero: number, serie: number, ve
     `  <status>PRE_VALIDADO_SEM_TRANSMISSAO_SEFAZ</status>`,
     `</documentoFiscalDraft>`,
   ].join("\n");
+}
+
+async function buildAccessKey(empresaId: number, modelo: "NFE" | "NFCE", numero: number, serie: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [empresa] = await db.select({ cnpj: empresas.cnpj }).from(empresas).where(eq(empresas.id, empresaId)).limit(1);
+  const cnpj = String(empresa?.cnpj || "").replace(/\D/g, "").padStart(14, "0").slice(0, 14);
+  const now = new Date();
+  const aamm = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const modeloCodigo = modelo === "NFCE" ? "65" : "55";
+  const base = `35${aamm}${cnpj}${modeloCodigo}${String(serie).padStart(3, "0")}${String(numero).padStart(9, "0")}100000001`;
+  return `${base}${mod11(base)}`;
+}
+
+function mod11(value: string) {
+  let weight = 2;
+  let sum = 0;
+  for (let i = value.length - 1; i >= 0; i--) {
+    sum += Number(value[i]) * weight;
+    weight = weight === 9 ? 2 : weight + 1;
+  }
+  const result = 11 - (sum % 11);
+  return result >= 10 ? 0 : result;
+}
+
+async function buildFiscalXml(empresaId: number, modelo: "NFE" | "NFCE", numero: number, serie: number, vendaId: number, chaveAcesso: string | null, protocolo: string | null) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [empresa] = await db.select().from(empresas).where(eq(empresas.id, empresaId)).limit(1);
+  const [sale] = await db.select().from(vendas).where(and(eq(vendas.id, vendaId), eq(vendas.empresaId, empresaId))).limit(1);
+  const saleItems = await db
+    .select({
+      quantidade: itensVenda.quantidade,
+      precoUnitario: itensVenda.precoUnitario,
+      valorTotal: itensVenda.valorTotal,
+      descricao: produtos.descricao,
+      codigo: produtos.codigo,
+      ncm: produtos.ncm,
+      cfop: produtos.cfopPadraoVenda,
+    })
+    .from(itensVenda)
+    .innerJoin(produtos, eq(itensVenda.produtoId, produtos.id))
+    .where(eq(itensVenda.vendaId, vendaId));
+
+  const itemsXml = saleItems.map((item, index) => [
+    `    <item nItem="${index + 1}">`,
+    `      <codigo>${escapeXml(item.codigo || "")}</codigo>`,
+    `      <descricao>${escapeXml(item.descricao || "")}</descricao>`,
+    `      <ncm>${item.ncm || ""}</ncm>`,
+    `      <cfop>${item.cfop || ""}</cfop>`,
+    `      <quantidade>${item.quantidade}</quantidade>`,
+    `      <valorUnitario>${(item.precoUnitario / 100).toFixed(2)}</valorUnitario>`,
+    `      <valorTotal>${(item.valorTotal / 100).toFixed(2)}</valorTotal>`,
+    `    </item>`,
+  ].join("\n")).join("\n");
+
+  return [
+    `<?xml version="1.0" encoding="UTF-8"?>`,
+    `<notaFiscal modelo="${modelo}" chave="${chaveAcesso || ""}">`,
+    `  <emitente cnpj="${escapeXml(empresa?.cnpj || "")}">${escapeXml(empresa?.razaoSocial || empresa?.nomeFantasia || "")}</emitente>`,
+    `  <identificacao serie="${serie}" numero="${numero}" vendaId="${vendaId}" numeroVenda="${escapeXml(sale?.numeroVenda || "")}" />`,
+    `  <itens>`,
+    itemsXml,
+    `  </itens>`,
+    `  <total>${((sale?.valorLiquido || 0) / 100).toFixed(2)}</total>`,
+    `  <protocolo>${protocolo || ""}</protocolo>`,
+    `</notaFiscal>`,
+  ].join("\n");
+}
+
+function escapeXml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }

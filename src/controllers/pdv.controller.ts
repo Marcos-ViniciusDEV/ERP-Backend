@@ -3,6 +3,7 @@ import * as pdvService from "../services/pdv.service";
 import { sincronizarPDVSchema } from "../zod/pdv.schema";
 import { ZodError } from "zod";
 import * as pdvWebSocketService from "../services/pdv-websocket.service";
+import * as pagamentosService from "../services/pagamentos.service";
 
 /**
  * Controller para endpoints do PDV
@@ -80,18 +81,89 @@ export async function sincronizar(req: Request, res: Response) {
  * GET /api/pdv/ativos
  * Retorna lista de PDVs conectados via WebSocket
  */
-export async function getActivePDVs(_req: Request, res: Response) {
+export async function getActivePDVs(req: Request, res: Response) {
   try {
+    const empresaId = req.empresaId;
+    if (!empresaId) throw new Error("Acesso negado: empresaId nao definido");
+
     const pdvs = pdvWebSocketService.getActivePDVs();
+    const configPagamento = await pagamentosService.getPaymentConfigBundle(empresaId);
+    const terminais = configPagamento.terminaisPagamento || [];
+    const provedores = configPagamento.provedores || [];
+    const keyStatuses = await pdvService.listPinpadPairingKeyStatus(empresaId, pdvs.map((pdv: any) => pdv.id));
+    const empresa = await pdvService.getEmpresaIdentity(empresaId);
+
+    const pdvsComMaquininha = pdvs.map((pdv: any) => {
+      const terminal = terminais.find((item: any) => item.ativo && item.pdvId === pdv.id);
+      const provedor = provedores.find((item: any) => item.id === terminal?.provedorId);
+      const pinpadKey = keyStatuses.find((item) => item.pdvId === pdv.id);
+
+      return {
+        ...pdv,
+        cnpjVinculado: empresa?.cnpj || null,
+        pinpadKey,
+        maquininha: terminal
+          ? {
+              conectada: true,
+              nomeTerminal: terminal.nomeTerminal,
+              tipo: terminal.tipo,
+              provedor: provedor?.nome || null,
+              status: terminal.ultimoStatus || "Nao testado",
+              identificador: terminal.serialEquipamento || terminal.codigoTerminal || terminal.terminalTef || null,
+            }
+          : {
+              conectada: false,
+              nomeTerminal: null,
+              tipo: null,
+              provedor: null,
+              status: "Sem maquininha vinculada",
+              identificador: null,
+            },
+      };
+    });
+
     res.json({
       success: true,
-      data: pdvs,
+      data: pdvsComMaquininha,
     });
   } catch (error: any) {
     console.error("Erro ao buscar PDVs ativos:", error);
     res.status(500).json({
       success: false,
       error: "Erro ao buscar PDVs ativos",
+      message: error.message,
+    });
+  }
+}
+
+export async function gerarPinpadKey(req: Request, res: Response) {
+  try {
+    const empresaId = req.empresaId;
+    if (!empresaId) throw new Error("Acesso negado: empresaId nao definido");
+
+    const pdvId = String(req.params.pdvId || req.body?.pdvId || "").trim();
+    if (!pdvId) {
+      res.status(400).json({ success: false, error: "pdvId e obrigatorio" });
+      return;
+    }
+
+    const online = pdvWebSocketService.getActivePDVs().some((pdv: any) => pdv.id === pdvId);
+    if (!online) {
+      res.status(400).json({ success: false, error: "O PDV precisa estar online para gerar a chave do PinPad" });
+      return;
+    }
+
+    const data = await pdvService.generatePinpadPairingKey(empresaId, pdvId);
+    res.json({
+      success: true,
+      data,
+      message: `Chave PinPad gerada para o PDV ${pdvId}`,
+    });
+  } catch (error: any) {
+    console.error("Erro ao gerar chave PinPad:", error);
+    res.status(500).json({
+      success: false,
+      error: "Erro ao gerar chave PinPad",
       message: error.message,
     });
   }
