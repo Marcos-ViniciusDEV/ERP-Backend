@@ -2,7 +2,17 @@ import { Request, Response } from "express";
 import * as fiscalService from "../services/fiscal.service";
 import * as pdvService from "../services/pdv.service";
 import * as pdvWebSocketService from "../services/pdv-websocket.service";
-import { fiscalCancelSchema, fiscalConfigSchema, fiscalPrepareSchema, fiscalPreflightSchema } from "../zod/fiscal.schema";
+import {
+  certificadoDigitalSchema,
+  empresaFiscalSchema,
+  fiscalCancelSchema,
+  fiscalConfigSchema,
+  fiscalProviderCredentialSchema,
+  fiscalPrepareSchema,
+  fiscalPreflightSchema,
+  satMfeCupomSchema,
+  satMfeEquipamentoSchema,
+} from "../zod/fiscal.schema";
 
 export async function getConfig(req: Request, res: Response) {
   try {
@@ -28,6 +38,44 @@ export async function updateConfig(req: Request, res: Response) {
     res.json({ config, pdvCarga });
   } catch (error: any) {
     res.status(400).json({ error: error.message || "Erro ao atualizar configuracoes fiscais" });
+  }
+}
+
+export async function getEmpresaFiscal(req: Request, res: Response) {
+  try {
+    const result = await fiscalService.getEmpresaFiscal(req.empresaId!);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Erro ao buscar cadastro fiscal da empresa" });
+  }
+}
+
+export async function updateEmpresaFiscal(req: Request, res: Response) {
+  try {
+    const input = empresaFiscalSchema.parse(req.body);
+    const result = await fiscalService.updateEmpresaFiscal(req.empresaId!, input);
+    res.json(result);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || "Erro ao atualizar cadastro fiscal da empresa" });
+  }
+}
+
+export async function listProviderCredentials(req: Request, res: Response) {
+  try {
+    const result = await fiscalService.listProviderCredentials(req.empresaId!);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Erro ao listar credenciais fiscais" });
+  }
+}
+
+export async function upsertProviderCredential(req: Request, res: Response) {
+  try {
+    const input = fiscalProviderCredentialSchema.parse(req.body);
+    const result = await fiscalService.upsertProviderCredential(req.empresaId!, input);
+    res.status(201).json(result);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || "Erro ao salvar credencial fiscal" });
   }
 }
 
@@ -109,5 +157,109 @@ export async function summary(req: Request, res: Response) {
     res.json(result);
   } catch (error: any) {
     res.status(500).json({ error: error.message || "Erro ao buscar resumo fiscal" });
+  }
+}
+
+export async function readiness(req: Request, res: Response) {
+  try {
+    const result = await fiscalService.getFiscalReadiness(req.empresaId!);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Erro ao verificar prontidao fiscal" });
+  }
+}
+
+export async function listEventos(req: Request, res: Response) {
+  try {
+    const documentoFiscalId = req.query.documentoFiscalId ? Number(req.query.documentoFiscalId) : undefined;
+    const result = await fiscalService.listEventos(req.empresaId!, documentoFiscalId);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Erro ao buscar eventos fiscais" });
+  }
+}
+
+export async function listTransmissoes(req: Request, res: Response) {
+  try {
+    const documentoFiscalId = req.query.documentoFiscalId ? Number(req.query.documentoFiscalId) : undefined;
+    const result = await fiscalService.listTransmissoes(req.empresaId!, documentoFiscalId);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Erro ao buscar transmissoes fiscais" });
+  }
+}
+
+export async function listCertificados(req: Request, res: Response) {
+  try {
+    const result = await fiscalService.listCertificados(req.empresaId!);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Erro ao listar certificados" });
+  }
+}
+
+export async function createCertificado(req: Request, res: Response) {
+  try {
+    const input = certificadoDigitalSchema.parse(req.body);
+    const result = await fiscalService.createCertificado(req.empresaId!, input);
+    res.status(201).json(result);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || "Erro ao cadastrar certificado" });
+  }
+}
+
+export async function testCertificado(req: Request, res: Response) {
+  try {
+    const result = await fiscalService.testCertificado(req.empresaId!, Number(req.params.id));
+    res.json(result);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || "Erro ao testar certificado" });
+  }
+}
+
+export async function deleteCertificado(req: Request, res: Response) {
+  try {
+    const result = await fiscalService.deactivateCertificado(req.empresaId!, Number(req.params.id));
+    res.json(result);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || "Erro ao desativar certificado" });
+  }
+}
+
+export async function listSatMfeEquipamentos(req: Request, res: Response) {
+  try {
+    const result = await fiscalService.listSatMfeEquipamentos(req.empresaId!);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Erro ao listar SAT/MFE" });
+  }
+}
+
+export async function createSatMfeEquipamento(req: Request, res: Response) {
+  try {
+    const input = satMfeEquipamentoSchema.parse(req.body);
+    const result = await fiscalService.createSatMfeEquipamento(req.empresaId!, input);
+    res.status(201).json(result);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || "Erro ao cadastrar SAT/MFE" });
+  }
+}
+
+export async function testSatMfeEquipamento(req: Request, res: Response) {
+  try {
+    const result = await fiscalService.testSatMfeEquipamento(req.empresaId!, Number(req.params.id));
+    res.json(result);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || "Erro ao testar SAT/MFE" });
+  }
+}
+
+export async function createSatMfeCupom(req: Request, res: Response) {
+  try {
+    const input = satMfeCupomSchema.parse(req.body);
+    const result = await fiscalService.createSatMfeCupom(req.empresaId!, input);
+    res.status(201).json(result);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || "Erro ao criar cupom SAT/MFE" });
   }
 }

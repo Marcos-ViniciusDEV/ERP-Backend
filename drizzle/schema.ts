@@ -17,6 +17,20 @@ export const empresas = mysqlTable("empresas", {
   razaoSocial: varchar("razaoSocial", { length: 255 }).notNull(),
   nomeFantasia: varchar("nomeFantasia", { length: 255 }),
   cnpj: varchar("cnpj", { length: 18 }).notNull().unique(),
+  inscricaoEstadual: varchar("inscricaoEstadual", { length: 20 }),
+  inscricaoMunicipal: varchar("inscricaoMunicipal", { length: 20 }),
+  crt: mysqlEnum("crt", ["1", "2", "3"]).default("1"),
+  cnae: varchar("cnae", { length: 10 }),
+  telefone: varchar("telefone", { length: 20 }),
+  emailFiscal: varchar("emailFiscal", { length: 320 }),
+  logradouro: varchar("logradouro", { length: 255 }),
+  numero: varchar("numero", { length: 20 }),
+  complemento: varchar("complemento", { length: 120 }),
+  bairro: varchar("bairro", { length: 120 }),
+  municipio: varchar("municipio", { length: 120 }),
+  codigoMunicipio: varchar("codigoMunicipio", { length: 10 }),
+  uf: varchar("uf", { length: 2 }),
+  cep: varchar("cep", { length: 10 }),
   codigoAcesso: varchar("codigoAcesso", { length: 20 }).notNull().unique(), // ex: "LOJA-X123"
   senhaAtivacao: text("senhaAtivacao").notNull(), // Hash da senha para ativar PDVs
   plano: mysqlEnum("plano", ["BASICO", "PRO", "ENTERPRISE", "TRIAL", "STARTER", "PROFESSIONAL"]).default("TRIAL").notNull(),
@@ -324,6 +338,7 @@ export const vendas = mysqlTable("vendas", {
   ccf: varchar("ccf", { length: 6 }), // Added CCF
   coo: varchar("coo", { length: 6 }), // Added COO
   pdvId: varchar("pdvId", { length: 50 }), // Added PDV ID
+  clienteId: int("clienteId").references(() => clientes.id),
   dataVenda: timestamp("dataVenda").defaultNow().notNull(),
   valorTotal: int("valorTotal").notNull().default(0), // em centavos
   valorDesconto: int("valorDesconto").notNull().default(0), // em centavos
@@ -390,31 +405,181 @@ export type ConfiguracaoFiscal = typeof configuracoesFiscais.$inferSelect;
 export type InsertConfiguracaoFiscal = typeof configuracoesFiscais.$inferInsert;
 
 /**
+ * Credenciais de provedores fiscais por empresa.
+ */
+export const fiscalProvedorCredenciais = mysqlTable("fiscal_provedor_credenciais", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  provedor: mysqlEnum("provedor", ["FOCUS_NFE", "NFE_IO", "PLUGNOTAS"]).notNull(),
+  ambiente: mysqlEnum("ambiente", ["HOMOLOGACAO", "PRODUCAO"]).default("HOMOLOGACAO").notNull(),
+  tokenCriptografado: text("tokenCriptografado").notNull(),
+  baseUrl: varchar("baseUrl", { length: 500 }),
+  companyId: varchar("companyId", { length: 120 }),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type FiscalProvedorCredencial = typeof fiscalProvedorCredenciais.$inferSelect;
+export type InsertFiscalProvedorCredencial = typeof fiscalProvedorCredenciais.$inferInsert;
+
+/**
  * Documentos fiscais gerados, autorizados, rejeitados ou cancelados.
  */
 export const documentosFiscais = mysqlTable("documentos_fiscais", {
   id: int("id").autoincrement().primaryKey(),
   empresaId: int("empresaId").notNull().references(() => empresas.id),
   vendaId: int("vendaId").references(() => vendas.id),
-  modelo: mysqlEnum("modelo", ["NFE", "NFCE"]).notNull(),
+  modelo: mysqlEnum("modelo", ["NFE", "NFCE", "SAT", "MFE"]).notNull(),
   ambiente: mysqlEnum("ambiente", ["HOMOLOGACAO", "PRODUCAO"]).default("HOMOLOGACAO").notNull(),
-  status: mysqlEnum("status", ["RASCUNHO", "PENDENTE", "VALIDACAO_FALHOU", "PRONTA_PARA_EMISSAO", "AUTORIZADA", "REJEITADA", "CANCELADA", "CONTINGENCIA"]).default("RASCUNHO").notNull(),
+  status: mysqlEnum("status", ["RASCUNHO", "PENDENTE", "VALIDACAO_FALHOU", "PRONTO_PARA_ENVIO", "PRONTA_PARA_EMISSAO", "ASSINADO", "ENVIADO", "AUTORIZADA", "AUTORIZADO", "REJEITADA", "REJEITADO", "DENEGADO", "CANCELADA", "CANCELADO", "CONTINGENCIA", "INUTILIZADO"]).default("RASCUNHO").notNull(),
   numero: int("numero"),
   serie: int("serie"),
   chaveAcesso: varchar("chaveAcesso", { length: 60 }),
+  recibo: varchar("recibo", { length: 80 }),
   protocolo: varchar("protocolo", { length: 80 }),
+  protocoloAutorizacao: varchar("protocoloAutorizacao", { length: 80 }),
+  protocoloCancelamento: varchar("protocoloCancelamento", { length: 80 }),
+  codigoStatusSefaz: varchar("codigoStatusSefaz", { length: 10 }),
+  motivoStatusSefaz: text("motivoStatusSefaz"),
   motivoStatus: text("motivoStatus"),
   xml: text("xml"),
+  xmlGerado: text("xmlGerado"),
+  xmlAssinado: text("xmlAssinado"),
+  xmlAutorizado: text("xmlAutorizado"),
+  xmlCancelamento: text("xmlCancelamento"),
   danfeUrl: varchar("danfeUrl", { length: 500 }),
+  qrcodeUrl: text("qrcodeUrl"),
+  digestValue: varchar("digestValue", { length: 120 }),
   justificativaCancelamento: text("justificativaCancelamento"),
   emitidaEm: timestamp("emitidaEm"),
+  autorizadaEm: timestamp("autorizadaEm"),
   canceladaEm: timestamp("canceladaEm"),
+  inutilizadaEm: timestamp("inutilizadaEm"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 export type DocumentoFiscal = typeof documentosFiscais.$inferSelect;
 export type InsertDocumentoFiscal = typeof documentosFiscais.$inferInsert;
+
+/**
+ * Certificados digitais A1 por empresa.
+ */
+export const certificadosDigitais = mysqlTable("certificados_digitais", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  tipo: mysqlEnum("tipo", ["A1"]).default("A1").notNull(),
+  nomeArquivo: varchar("nomeArquivo", { length: 255 }).notNull(),
+  caminhoSeguro: varchar("caminhoSeguro", { length: 500 }).notNull(),
+  senhaCriptografada: text("senhaCriptografada"),
+  validade: timestamp("validade"),
+  cnpj: varchar("cnpj", { length: 20 }),
+  razaoSocial: varchar("razaoSocial", { length: 255 }),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CertificadoDigital = typeof certificadosDigitais.$inferSelect;
+export type InsertCertificadoDigital = typeof certificadosDigitais.$inferInsert;
+
+/**
+ * Eventos fiscais oficiais e pendentes.
+ */
+export const fiscalEventos = mysqlTable("fiscal_eventos", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  documentoFiscalId: int("documentoFiscalId").references(() => documentosFiscais.id),
+  tipo: mysqlEnum("tipo", ["CANCELAMENTO", "CARTA_CORRECAO", "INUTILIZACAO", "CONSULTA_STATUS", "CONSULTA_PROTOCOLO", "MANIFESTACAO"]).notNull(),
+  status: mysqlEnum("status", ["PENDENTE", "ENVIADO", "AUTORIZADO", "REJEITADO", "ERRO"]).default("PENDENTE").notNull(),
+  codigoStatusSefaz: varchar("codigoStatusSefaz", { length: 10 }),
+  motivoStatusSefaz: text("motivoStatusSefaz"),
+  protocolo: varchar("protocolo", { length: 80 }),
+  xmlEvento: text("xmlEvento"),
+  xmlRetorno: text("xmlRetorno"),
+  justificativa: text("justificativa"),
+  sequencia: int("sequencia").default(1),
+  usuarioId: int("usuarioId").references(() => users.id),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type FiscalEvento = typeof fiscalEventos.$inferSelect;
+export type InsertFiscalEvento = typeof fiscalEventos.$inferInsert;
+
+/**
+ * Auditoria tecnica de transmissao fiscal.
+ */
+export const fiscalTransmissoes = mysqlTable("fiscal_transmissoes", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  documentoFiscalId: int("documentoFiscalId").references(() => documentosFiscais.id),
+  tipoOperacao: varchar("tipoOperacao", { length: 80 }).notNull(),
+  ambiente: mysqlEnum("ambiente", ["HOMOLOGACAO", "PRODUCAO"]).default("HOMOLOGACAO").notNull(),
+  uf: varchar("uf", { length: 2 }),
+  endpoint: varchar("endpoint", { length: 500 }),
+  requestXml: text("requestXml"),
+  responseXml: text("responseXml"),
+  httpStatus: int("httpStatus"),
+  codigoStatusSefaz: varchar("codigoStatusSefaz", { length: 10 }),
+  motivo: text("motivo"),
+  duracaoMs: int("duracaoMs"),
+  erroTecnico: text("erroTecnico"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type FiscalTransmissao = typeof fiscalTransmissoes.$inferSelect;
+export type InsertFiscalTransmissao = typeof fiscalTransmissoes.$inferInsert;
+
+/**
+ * Equipamentos SAT/MFE vinculados aos PDVs.
+ */
+export const satMfeEquipamentos = mysqlTable("sat_mfe_equipamentos", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  pdvId: varchar("pdvId", { length: 50 }).notNull(),
+  tipo: mysqlEnum("tipo", ["SAT", "MFE"]).notNull(),
+  fabricante: varchar("fabricante", { length: 120 }),
+  modelo: varchar("modelo", { length: 120 }),
+  numeroSerie: varchar("numeroSerie", { length: 120 }),
+  codigoAtivacaoCriptografado: text("codigoAtivacaoCriptografado"),
+  assinaturaAplicativoComercial: text("assinaturaAplicativoComercial"),
+  cnpjSoftwareHouse: varchar("cnpjSoftwareHouse", { length: 20 }),
+  status: mysqlEnum("status", ["ATIVO", "INATIVO", "ERRO", "NAO_TESTADO"]).default("NAO_TESTADO").notNull(),
+  ultimoTesteComunicacao: timestamp("ultimoTesteComunicacao"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SatMfeEquipamento = typeof satMfeEquipamentos.$inferSelect;
+export type InsertSatMfeEquipamento = typeof satMfeEquipamentos.$inferInsert;
+
+/**
+ * Cupons fiscais SAT/MFE sincronizados pelo PDV/agent local.
+ */
+export const satMfeCupons = mysqlTable("sat_mfe_cupons", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  vendaId: int("vendaId").references(() => vendas.id),
+  equipamentoId: int("equipamentoId").references(() => satMfeEquipamentos.id),
+  modelo: mysqlEnum("modelo", ["SAT", "MFE"]).notNull(),
+  numeroSessao: int("numeroSessao"),
+  chaveConsulta: varchar("chaveConsulta", { length: 80 }),
+  numeroCupom: varchar("numeroCupom", { length: 80 }),
+  xmlEnvio: text("xmlEnvio"),
+  xmlRetorno: text("xmlRetorno"),
+  xmlCancelamento: text("xmlCancelamento"),
+  status: mysqlEnum("status", ["PENDENTE_EQUIPAMENTO", "EMITIDO", "CANCELADO", "REJEITADO", "ERRO"]).default("PENDENTE_EQUIPAMENTO").notNull(),
+  codigoRetorno: varchar("codigoRetorno", { length: 20 }),
+  mensagemRetorno: text("mensagemRetorno"),
+  qrCode: text("qrCode"),
+  emitidoEm: timestamp("emitidoEm"),
+  canceladoEm: timestamp("canceladoEm"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type SatMfeCupom = typeof satMfeCupons.$inferSelect;
+export type InsertSatMfeCupom = typeof satMfeCupons.$inferInsert;
 
 /**
  * Provedores de pagamento disponiveis para configuracao.
@@ -798,10 +963,24 @@ export const clientes = mysqlTable("clientes", {
   id: int("id").autoincrement().primaryKey(),
   empresaId: int("empresaId").notNull().references(() => empresas.id),
   nome: varchar("nome", { length: 255 }).notNull(),
+  razaoSocial: varchar("razaoSocial", { length: 255 }),
+  nomeFantasia: varchar("nomeFantasia", { length: 255 }),
+  tipoPessoa: mysqlEnum("tipoPessoa", ["FISICA", "JURIDICA", "ESTRANGEIRO"]).default("FISICA").notNull(),
   cpfCnpj: varchar("cpfCnpj", { length: 20 }).unique(),
+  inscricaoEstadual: varchar("inscricaoEstadual", { length: 20 }),
+  indicadorInscricaoEstadual: mysqlEnum("indicadorInscricaoEstadual", ["1", "2", "9"]).default("9"),
   email: varchar("email", { length: 320 }),
   telefone: varchar("telefone", { length: 20 }),
   endereco: text("endereco"), // JSON string: { rua, numero, bairro, cidade, cep }
+  logradouro: varchar("logradouro", { length: 255 }),
+  numero: varchar("numero", { length: 20 }),
+  complemento: varchar("complemento", { length: 120 }),
+  bairro: varchar("bairro", { length: 120 }),
+  municipio: varchar("municipio", { length: 120 }),
+  codigoMunicipio: varchar("codigoMunicipio", { length: 10 }),
+  uf: varchar("uf", { length: 2 }),
+  cep: varchar("cep", { length: 10 }),
+  pais: varchar("pais", { length: 60 }).default("Brasil"),
   fotoCaminho: varchar("fotoCaminho", { length: 255 }),
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

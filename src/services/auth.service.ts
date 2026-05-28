@@ -17,7 +17,7 @@
  */
 
 import { SignJWT, jwtVerify } from "jose";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import type { User } from "../../drizzle/schema";
 import { users, empresas } from "../../drizzle/schema";
 import { getDb } from "../libs/db";
@@ -184,10 +184,25 @@ export async function validateCompany(cnpj: string, senhaAcesso: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
+  const cnpjDigits = cnpj.replace(/\D/g, "");
   const [empresa] = await db
-    .select()
+    .select({
+      id: empresas.id,
+      razaoSocial: empresas.razaoSocial,
+      nomeFantasia: empresas.nomeFantasia,
+      cnpj: empresas.cnpj,
+      codigoAcesso: empresas.codigoAcesso,
+      senhaAtivacao: empresas.senhaAtivacao,
+      plano: empresas.plano,
+      ativo: empresas.ativo,
+      bloqueado: empresas.bloqueado,
+      motivoBloqueio: empresas.motivoBloqueio,
+    })
     .from(empresas)
-    .where(and(eq(empresas.cnpj, cnpj), eq(empresas.ativo, true)))
+    .where(and(
+      sql`REPLACE(REPLACE(REPLACE(${empresas.cnpj}, '.', ''), '/', ''), '-', '') = ${cnpjDigits}`,
+      eq(empresas.ativo, true)
+    ))
     .limit(1);
 
   if (!empresa) {
@@ -247,7 +262,17 @@ export async function login(identifier: string, password: string, codigoEmpresa?
   }
 
   const empresaResult = await db
-    .select()
+    .select({
+      id: empresas.id,
+      razaoSocial: empresas.razaoSocial,
+      nomeFantasia: empresas.nomeFantasia,
+      cnpj: empresas.cnpj,
+      codigoAcesso: empresas.codigoAcesso,
+      plano: empresas.plano,
+      ativo: empresas.ativo,
+      bloqueado: empresas.bloqueado,
+      motivoBloqueio: empresas.motivoBloqueio,
+    })
     .from(empresas)
     .where(and(eq(empresas.codigoAcesso, codigoEmpresa), eq(empresas.ativo, true)))
     .limit(1);

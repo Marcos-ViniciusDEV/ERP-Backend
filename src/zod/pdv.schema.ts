@@ -20,6 +20,7 @@ export const vendaPDVSchema = z.object({
   ccf: z.string().max(6).optional(),
   coo: z.string().max(6).optional(),
   pdvId: z.string().max(50).optional(),
+  clienteId: z.number().int().positive().optional(),
   dataVenda: z.string().datetime(),
   valorTotal: z.number().int().nonnegative(),
   valorDesconto: z.number().int().nonnegative().default(0),

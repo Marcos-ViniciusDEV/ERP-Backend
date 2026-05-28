@@ -309,6 +309,7 @@ export async function sincronizar(empresaId: number, data: {
           ccf: venda.ccf,
           coo: venda.coo,
           pdvId: venda.pdvId,
+          clienteId: venda.clienteId,
           dataVenda: new Date(venda.dataVenda),
           valorTotal: venda.valorTotal,
           valorDesconto: venda.valorDesconto,

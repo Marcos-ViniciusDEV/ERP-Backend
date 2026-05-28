@@ -62,4 +62,13 @@ export const ENV = {
 
   /** Chave da API Forge */
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+
+  /** Provedor fiscal externo: focus_nfe, nfe_io, plugnotas ou mock */
+  fiscalProvider: process.env.FISCAL_PROVIDER ?? "",
+
+  /** Token de API do provedor fiscal */
+  fiscalProviderToken: process.env.FISCAL_PROVIDER_TOKEN ?? "",
+
+  /** URL customizada opcional do provedor fiscal */
+  fiscalProviderBaseUrl: process.env.FISCAL_PROVIDER_BASE_URL ?? "",
 };

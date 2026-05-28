@@ -11,7 +11,7 @@
 
 import { eq, desc, and, sql, inArray } from "drizzle-orm";
 import { getDb } from "../libs/db";
-import { vendas, itensVenda, movimentacoesEstoque, movimentacoesCaixa, produtos, users } from "../../drizzle/schema";
+import { clientes, vendas, itensVenda, movimentacoesEstoque, movimentacoesCaixa, produtos, users } from "../../drizzle/schema";
 import type { CreateVendaInput } from "../models/venda.model";
 import * as produtoService from "./produto.service";
 import { randomUUID } from "crypto";
@@ -46,11 +46,15 @@ export async function list(empresaId: number, filters?: {
       observacao: vendas.observacao,
       operadorId: vendas.operadorId,
       operadorNome: sql<string>`COALESCE(${users.name}, ${vendas.operadorNome})`,
+      clienteId: vendas.clienteId,
+      clienteNome: clientes.nome,
+      clienteCpfCnpj: clientes.cpfCnpj,
       pdvId: vendas.pdvId,
       createdAt: vendas.createdAt,
     })
     .from(vendas)
     .leftJoin(users, eq(vendas.operadorId, users.id))
+    .leftJoin(clientes, eq(vendas.clienteId, clientes.id))
     .$dynamic();
 
   const conditions = [eq(vendas.empresaId, empresaId)];
@@ -191,6 +195,7 @@ export async function create(empresaId: number, data: CreateVendaInput, usuarioI
     ccf,
     coo,
     pdvId: "ONLINE",
+    clienteId: data.clienteId,
     dataVenda: new Date(),
     valorTotal,
     valorDesconto,
@@ -384,11 +389,15 @@ export async function getById(empresaId: number, idOrNumber: string | number): P
       observacao: vendas.observacao,
       operadorId: vendas.operadorId,
       operadorNome: sql<string>`COALESCE(${users.name}, ${vendas.operadorNome})`,
+      clienteId: vendas.clienteId,
+      clienteNome: clientes.nome,
+      clienteCpfCnpj: clientes.cpfCnpj,
       pdvId: vendas.pdvId,
       createdAt: vendas.createdAt,
     })
     .from(vendas)
-    .leftJoin(users, eq(vendas.operadorId, users.id));
+    .leftJoin(users, eq(vendas.operadorId, users.id))
+    .leftJoin(clientes, eq(vendas.clienteId, clientes.id));
 
   // @ts-ignore
   const whereClause = isId 

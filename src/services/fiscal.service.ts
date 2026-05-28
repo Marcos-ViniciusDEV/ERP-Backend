@@ -1,7 +1,41 @@
 import { and, desc, eq, sql } from "drizzle-orm";
-import { configuracoesFiscais, documentosFiscais, empresas, itensVenda, produtos, vendas } from "../../drizzle/schema";
+import fs from "fs";
+import path from "path";
+import { nanoid } from "nanoid";
+import {
+  certificadosDigitais,
+  clientes,
+  configuracoesFiscais,
+  documentosFiscais,
+  empresas,
+  fiscalEventos,
+  fiscalProvedorCredenciais,
+  fiscalTransmissoes,
+  itensVenda,
+  produtos,
+  satMfeCupons,
+  satMfeEquipamentos,
+  vendas,
+} from "../../drizzle/schema";
 import { getDb } from "../libs/db";
-import type { FiscalConfigInput, FiscalPreflightInput, FiscalPrepareInput } from "../zod/fiscal.schema";
+import { ENV } from "../libs/env";
+import {
+  cancelFiscalDocumentWithProvider,
+  downloadFiscalProviderFile,
+  emitFiscalDocumentWithProvider,
+  hasFiscalProviderForCompany,
+  type FiscalProviderResult,
+} from "./fiscal-provider.service";
+import type {
+  CertificadoDigitalInput,
+  EmpresaFiscalInput,
+  FiscalConfigInput,
+  FiscalProviderCredentialInput,
+  FiscalPreflightInput,
+  FiscalPrepareInput,
+  SatMfeCupomInput,
+  SatMfeEquipamentoInput,
+} from "../zod/fiscal.schema";
 
 type FiscalIssueSeverity = "error" | "warning";
 
@@ -11,6 +45,8 @@ type FiscalIssue = {
   message: string;
   path?: string;
 };
+
+type FiscalModelo = "NFE" | "NFCE" | "SAT" | "MFE";
 
 export async function getConfig(empresaId: number) {
   const db = await getDb();
@@ -50,6 +86,99 @@ export async function updateConfig(empresaId: number, input: FiscalConfigInput) 
     .where(and(eq(configuracoesFiscais.id, current.id), eq(configuracoesFiscais.empresaId, empresaId)));
 
   return getConfig(empresaId);
+}
+
+export async function getEmpresaFiscal(empresaId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [empresa] = await db.select().from(empresas).where(eq(empresas.id, empresaId)).limit(1);
+  if (!empresa) throw new Error("Empresa nao encontrada");
+  return empresa;
+}
+
+export async function updateEmpresaFiscal(empresaId: number, input: EmpresaFiscalInput) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(empresas)
+    .set({
+      razaoSocial: input.razaoSocial,
+      nomeFantasia: input.nomeFantasia || null,
+      cnpj: input.cnpj,
+      inscricaoEstadual: input.inscricaoEstadual || null,
+      inscricaoMunicipal: input.inscricaoMunicipal || null,
+      crt: input.crt,
+      cnae: input.cnae || null,
+      telefone: input.telefone || null,
+      emailFiscal: input.emailFiscal || null,
+      logradouro: input.logradouro || null,
+      numero: input.numero || null,
+      complemento: input.complemento || null,
+      bairro: input.bairro || null,
+      municipio: input.municipio || null,
+      codigoMunicipio: input.codigoMunicipio || null,
+      uf: input.uf || null,
+      cep: input.cep || null,
+    })
+    .where(eq(empresas.id, empresaId));
+  return getEmpresaFiscal(empresaId);
+}
+
+export async function listProviderCredentials(empresaId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db
+    .select({
+      id: fiscalProvedorCredenciais.id,
+      provedor: fiscalProvedorCredenciais.provedor,
+      ambiente: fiscalProvedorCredenciais.ambiente,
+      baseUrl: fiscalProvedorCredenciais.baseUrl,
+      companyId: fiscalProvedorCredenciais.companyId,
+      ativo: fiscalProvedorCredenciais.ativo,
+      createdAt: fiscalProvedorCredenciais.createdAt,
+      updatedAt: fiscalProvedorCredenciais.updatedAt,
+    })
+    .from(fiscalProvedorCredenciais)
+    .where(eq(fiscalProvedorCredenciais.empresaId, empresaId))
+    .orderBy(desc(fiscalProvedorCredenciais.createdAt));
+}
+
+export async function upsertProviderCredential(empresaId: number, input: FiscalProviderCredentialInput) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const [existing] = await db
+    .select()
+    .from(fiscalProvedorCredenciais)
+    .where(and(
+      eq(fiscalProvedorCredenciais.empresaId, empresaId),
+      eq(fiscalProvedorCredenciais.provedor, input.provedor),
+      eq(fiscalProvedorCredenciais.ambiente, input.ambiente),
+    ))
+    .limit(1);
+
+  const payload = {
+    tokenCriptografado: encodeSecret(input.token),
+    baseUrl: input.baseUrl || null,
+    companyId: input.companyId || null,
+    ativo: input.ativo,
+  };
+
+  if (existing) {
+    await db
+      .update(fiscalProvedorCredenciais)
+      .set(payload)
+      .where(and(eq(fiscalProvedorCredenciais.id, existing.id), eq(fiscalProvedorCredenciais.empresaId, empresaId)));
+    return { success: true, id: existing.id };
+  }
+
+  const [result] = await db.insert(fiscalProvedorCredenciais).values({
+    empresaId,
+    provedor: input.provedor,
+    ambiente: input.ambiente,
+    ...payload,
+  });
+  return { success: true, id: result.insertId };
 }
 
 export async function listDocuments(empresaId: number) {
@@ -104,6 +233,14 @@ export async function preflightSale(empresaId: number, input: FiscalPreflightInp
     issues.push({ severity: "error", code: "VENDA_NAO_CONCLUIDA", message: "Somente vendas concluidas podem gerar documento fiscal." });
   }
 
+  if (input.modelo === "SAT" || input.modelo === "MFE") {
+    issues.push({
+      severity: "error",
+      code: "MODELO_REQUER_AGENT_LOCAL",
+      message: "SAT/MFE precisa ser emitido pelo PDV/agent local conectado ao equipamento fiscal.",
+    });
+  }
+
   if (input.modelo === "NFCE" && !config.habilitarNfce) {
     issues.push({ severity: "error", code: "NFCE_DESABILITADA", message: "A emissao automatica de NFC-e esta desabilitada nas configuracoes fiscais." });
   }
@@ -117,11 +254,36 @@ export async function preflightSale(empresaId: number, input: FiscalPreflightInp
   }
 
   if (input.modelo === "NFE") {
-    issues.push({
-      severity: "warning",
-      code: "CLIENTE_NAO_VINCULADO",
-      message: "A venda ainda nao possui vinculo estruturado com cliente no schema atual. Para NF-e modelo 55, o cadastro completo do destinatario sera obrigatorio.",
-    });
+    if (!sale.clienteId) {
+      issues.push({
+        severity: "error",
+        code: "CLIENTE_NAO_VINCULADO",
+        message: "NF-e modelo 55 exige cliente/destinatario vinculado a venda.",
+      });
+    } else {
+      const [cliente] = await db
+        .select()
+        .from(clientes)
+        .where(and(eq(clientes.id, sale.clienteId), eq(clientes.empresaId, empresaId)))
+        .limit(1);
+      const missing = [
+        !cliente?.cpfCnpj && "CPF/CNPJ",
+        !cliente?.logradouro && "logradouro",
+        !cliente?.numero && "numero",
+        !cliente?.bairro && "bairro",
+        !cliente?.municipio && "municipio",
+        !cliente?.codigoMunicipio && "codigo IBGE",
+        !cliente?.uf && "UF",
+        !cliente?.cep && "CEP",
+      ].filter(Boolean);
+      if (missing.length > 0) {
+        issues.push({
+          severity: "error",
+          code: "DESTINATARIO_INCOMPLETO",
+          message: `Cliente destinatario incompleto para NF-e: ${missing.join(", ")}.`,
+        });
+      }
+    }
   }
 
   const saleItems = await db
@@ -205,7 +367,7 @@ export async function prepareFiscalDocument(empresaId: number, input: FiscalPrep
     emitidaEm: null,
   });
 
-  if (!hasErrors) {
+  if (!hasErrors && (input.modelo === "NFE" || input.modelo === "NFCE")) {
     await incrementFiscalNumber(empresaId, input.modelo);
   }
 
@@ -255,12 +417,34 @@ export async function emitirNotaDaVenda(empresaId: number, input: FiscalPrepareI
     };
   }
 
-  const shouldAuthorizeMock = config.ambiente === "HOMOLOGACAO" || Boolean(config.certificadoDigitalCaminho);
-  const status = input.emitirEmContingencia
-    ? "CONTINGENCIA"
-    : shouldAuthorizeMock
-      ? "AUTORIZADA"
-      : "PRONTA_PARA_EMISSAO";
+  const status = input.emitirEmContingencia ? "CONTINGENCIA" : "PRONTO_PARA_ENVIO";
+
+  if (!input.emitirEmContingencia && (input.modelo === "NFE" || input.modelo === "NFCE") && await hasFiscalProviderForCompany(empresaId, config.ambiente)) {
+    const numero = input.modelo === "NFCE" ? config.proximoNumeroNfce : config.proximoNumeroNfe;
+    const serie = input.modelo === "NFCE" ? config.serieNfce : config.serieNfe;
+    const providerResult = await emitFiscalDocumentWithProvider(empresaId, input, config, numero, serie);
+
+    if (providerResult) {
+      const document = await createFiscalDocumentFromProvider(empresaId, input, config, providerResult, preflight, numero, serie);
+
+      if (input.modelo === "NFCE" && document.chaveAcesso) {
+        await db
+          .update(vendas)
+          .set({ nfceNumero: String(document.numero || ""), nfceChave: document.chaveAcesso })
+          .where(and(eq(vendas.id, input.vendaId), eq(vendas.empresaId, empresaId)));
+      }
+
+      return {
+        document,
+        preflight,
+        authorized: providerResult.status === "AUTORIZADA",
+        provider: providerResult.provider,
+        message: providerResult.status === "AUTORIZADA"
+          ? "Nota fiscal autorizada pelo provedor fiscal."
+          : providerResult.motivoStatusSefaz || "Nota enviada ao provedor fiscal e aguardando processamento/autorizacao.",
+      };
+    }
+  }
 
   const document = await createFiscalDocument(empresaId, input, config, status, preflight);
 
@@ -274,12 +458,10 @@ export async function emitirNotaDaVenda(empresaId: number, input: FiscalPrepareI
   return {
     document,
     preflight,
-    authorized: status === "AUTORIZADA",
-    message: status === "AUTORIZADA"
-      ? "Nota fiscal criada e autorizada em modo controlado. Integracao SEFAZ real entra na proxima etapa."
-      : status === "CONTINGENCIA"
+    authorized: false,
+    message: status === "CONTINGENCIA"
         ? "Nota fiscal criada em contingencia para posterior transmissao."
-        : "Nota fiscal criada e pronta para transmissao quando certificado/mensageria estiverem configurados.",
+        : "Nota fiscal criada e pronta para envio. A autorizacao real depende do motor fiscal/SEFAZ configurado.",
   };
 }
 
@@ -290,7 +472,7 @@ async function createFiscalDocument(empresaId: number, input: FiscalPrepareInput
   const numero = input.modelo === "NFCE" ? config.proximoNumeroNfce : config.proximoNumeroNfe;
   const serie = input.modelo === "NFCE" ? config.serieNfce : config.serieNfe;
   const chaveAcesso = status === "VALIDACAO_FALHOU" ? null : await buildAccessKey(empresaId, input.modelo, numero, serie);
-  const protocolo = status === "AUTORIZADA" ? `ERP${Date.now()}` : null;
+  const protocolo = null;
   const xml = status === "VALIDACAO_FALHOU"
     ? null
     : await buildFiscalXml(empresaId, input.modelo, numero, serie, input.vendaId, chaveAcesso, protocolo);
@@ -306,17 +488,79 @@ async function createFiscalDocument(empresaId: number, input: FiscalPrepareInput
     chaveAcesso,
     protocolo,
     motivoStatus: preflight.issues.map((issue: FiscalIssue) => `[${issue.severity}] ${issue.message}`).join("\n")
-      || (status === "AUTORIZADA" ? "Autorizada em fluxo fiscal controlado." : "Documento fiscal criado."),
+      || "Documento fiscal criado e aguardando transmissao fiscal real.",
     xml,
+    xmlGerado: xml,
     danfeUrl: chaveAcesso ? `/api/fiscal/documentos/${chaveAcesso}/danfe` : null,
-    emitidaEm: status === "AUTORIZADA" || status === "CONTINGENCIA" ? new Date() : null,
+    emitidaEm: status === "CONTINGENCIA" ? new Date() : null,
   });
 
-  if (status !== "VALIDACAO_FALHOU") {
+  if (status !== "VALIDACAO_FALHOU" && (input.modelo === "NFE" || input.modelo === "NFCE")) {
     await incrementFiscalNumber(empresaId, input.modelo);
   }
 
   const documentId = Number(insertResult.insertId);
+  const [document] = await db.select().from(documentosFiscais).where(eq(documentosFiscais.id, documentId)).limit(1);
+  return document;
+}
+
+async function createFiscalDocumentFromProvider(
+  empresaId: number,
+  input: FiscalPrepareInput,
+  config: any,
+  providerResult: FiscalProviderResult,
+  preflight: any,
+  numero: number,
+  serie: number,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const providerMessage = providerResult.motivoStatusSefaz || "Retorno recebido do provedor fiscal.";
+  const [insertResult] = await db.insert(documentosFiscais).values({
+    empresaId,
+    vendaId: input.vendaId,
+    modelo: input.modelo,
+    ambiente: config.ambiente,
+    status: providerResult.status as any,
+    numero,
+    serie,
+    chaveAcesso: providerResult.chaveAcesso,
+    protocolo: providerResult.protocolo,
+    protocoloAutorizacao: providerResult.status === "AUTORIZADA" ? providerResult.protocolo : null,
+    codigoStatusSefaz: providerResult.codigoStatusSefaz,
+    motivoStatusSefaz: providerResult.motivoStatusSefaz,
+    motivoStatus: preflight.issues.map((issue: FiscalIssue) => `[${issue.severity}] ${issue.message}`).join("\n")
+      || providerMessage,
+    xml: providerResult.xmlUrl,
+    xmlGerado: JSON.stringify(providerResult.requestPayload),
+    xmlAutorizado: providerResult.status === "AUTORIZADA" ? providerResult.xmlUrl : null,
+    danfeUrl: providerResult.danfeUrl,
+    qrcodeUrl: providerResult.qrcodeUrl,
+    emitidaEm: new Date(),
+    autorizadaEm: providerResult.authorizedAt,
+  });
+
+  const documentId = Number(insertResult.insertId);
+
+  await db.insert(fiscalTransmissoes).values({
+    empresaId,
+    documentoFiscalId: documentId,
+    tipoOperacao: "EMISSAO",
+    ambiente: config.ambiente,
+    endpoint: providerResult.endpoint,
+    requestXml: JSON.stringify(providerResult.requestPayload),
+    responseXml: JSON.stringify(providerResult.responsePayload),
+    httpStatus: providerResult.httpStatus,
+    codigoStatusSefaz: providerResult.codigoStatusSefaz,
+    motivo: providerMessage,
+    duracaoMs: providerResult.durationMs,
+  });
+
+  if (input.modelo === "NFE" || input.modelo === "NFCE") {
+    await incrementFiscalNumber(empresaId, input.modelo);
+  }
+
   const [document] = await db.select().from(documentosFiscais).where(eq(documentosFiscais.id, documentId)).limit(1);
   return document;
 }
@@ -336,13 +580,56 @@ export async function cancelDocument(empresaId: number, documentId: number, just
     throw new Error("Documento fiscal nao esta em um status cancelavel nesta etapa");
   }
 
+  const providerResult = document.status === "AUTORIZADA"
+    ? await cancelFiscalDocumentWithProvider(empresaId, document, justificativa)
+    : null;
+  const eventoStatus = providerResult
+    ? providerResult.status === "CANCELADA" || providerResult.codigoStatusSefaz === "135" ? "AUTORIZADO" : "REJEITADO"
+    : "PENDENTE";
+
+  await db.insert(fiscalEventos).values({
+    empresaId,
+    documentoFiscalId: documentId,
+    tipo: "CANCELAMENTO",
+    status: eventoStatus as any,
+    justificativa,
+    codigoStatusSefaz: providerResult?.codigoStatusSefaz || null,
+    motivoStatusSefaz: providerResult?.motivoStatusSefaz || null,
+    protocolo: providerResult?.protocolo || null,
+    xmlRetorno: providerResult ? JSON.stringify(providerResult.responsePayload) : null,
+  });
+
+  if (providerResult) {
+    await db.insert(fiscalTransmissoes).values({
+      empresaId,
+      documentoFiscalId: documentId,
+      tipoOperacao: "CANCELAMENTO",
+      ambiente: document.ambiente,
+      endpoint: providerResult.endpoint,
+      requestXml: JSON.stringify(providerResult.requestPayload),
+      responseXml: JSON.stringify(providerResult.responsePayload),
+      httpStatus: providerResult.httpStatus,
+      codigoStatusSefaz: providerResult.codigoStatusSefaz,
+      motivo: providerResult.motivoStatusSefaz,
+      duracaoMs: providerResult.durationMs,
+    });
+
+    if (eventoStatus !== "AUTORIZADO") {
+      throw new Error(providerResult.motivoStatusSefaz || "Cancelamento rejeitado pelo provedor fiscal.");
+    }
+  }
+
   await db
     .update(documentosFiscais)
     .set({
       status: "CANCELADA",
       justificativaCancelamento: justificativa,
+      protocoloCancelamento: providerResult?.protocolo || null,
+      codigoStatusSefaz: providerResult?.codigoStatusSefaz || document.codigoStatusSefaz,
+      motivoStatusSefaz: providerResult?.motivoStatusSefaz || document.motivoStatusSefaz,
+      xmlCancelamento: providerResult?.xmlUrl || null,
       canceladaEm: new Date(),
-      motivoStatus: "Cancelamento registrado no ERP. Transmissao do evento para SEFAZ sera feita na etapa de integracao.",
+      motivoStatus: providerResult ? "Cancelamento autorizado pelo provedor fiscal." : "Cancelamento registrado no ERP e pendente de transmissao oficial pelo motor fiscal.",
     })
     .where(and(eq(documentosFiscais.id, documentId), eq(documentosFiscais.empresaId, empresaId)));
 
@@ -360,10 +647,30 @@ export async function getDocumentXml(empresaId: number, documentId: number) {
     .limit(1);
   if (!document) throw new Error("Documento fiscal nao encontrado");
   if (!document.xml) throw new Error("Documento fiscal ainda nao possui XML");
+  if (isProviderFilePath(document.xml)) {
+    const providerFile = await downloadFiscalProviderFile(document.xml, document.ambiente, empresaId);
+    if (providerFile?.content) {
+      return { ...document, xml: providerFile.content };
+    }
+  }
   return document;
 }
 
 export async function getDocumentDanfeHtml(empresaId: number, documentId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [documentRecord] = await db
+    .select()
+    .from(documentosFiscais)
+    .where(and(eq(documentosFiscais.id, documentId), eq(documentosFiscais.empresaId, empresaId)))
+    .limit(1);
+
+  if (!documentRecord) throw new Error("Documento fiscal nao encontrado");
+  if (documentRecord.danfeUrl && isProviderFilePath(documentRecord.danfeUrl)) {
+    const providerFile = await downloadFiscalProviderFile(documentRecord.danfeUrl, documentRecord.ambiente, empresaId);
+    if (providerFile?.content) return providerFile.content;
+  }
+
   const document = await getDocumentXml(empresaId, documentId);
   return [
     "<!doctype html>",
@@ -402,6 +709,241 @@ export async function getFiscalSummary(empresaId: number, month: number, year: n
   return summary;
 }
 
+export async function getFiscalReadiness(empresaId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const config = await getConfig(empresaId);
+  const certificados = await listCertificados(empresaId);
+  const equipamentos = await listSatMfeEquipamentos(empresaId);
+  const certificadoAtivo = certificados.find((certificado) => certificado.ativo);
+  const certificadoVencido = certificadoAtivo?.validade
+    ? new Date(certificadoAtivo.validade).getTime() < Date.now()
+    : !certificadoAtivo;
+  const providerConfigured = await hasFiscalProviderForCompany(empresaId, config.ambiente);
+  const providerCredentials = await listProviderCredentials(empresaId);
+  const activeProvider = providerCredentials.find((credential) => credential.ativo && credential.ambiente === config.ambiente);
+
+  const checks = [
+    {
+      code: "AMBIENTE",
+      ok: Boolean(config.ambiente),
+      label: `Ambiente fiscal definido como ${config.ambiente}`,
+      detail: config.ambiente === "PRODUCAO"
+        ? "Em producao, as notas possuem valor fiscal real."
+        : "Homologacao permite testar sem valor fiscal.",
+    },
+    {
+      code: "CERTIFICADO_A1",
+      ok: Boolean(certificadoAtivo) && !certificadoVencido,
+      label: "Certificado A1 ativo e dentro da validade",
+      detail: certificadoAtivo
+        ? `Certificado ${certificadoAtivo.nomeArquivo} vence em ${certificadoAtivo.validade ? new Date(certificadoAtivo.validade).toLocaleDateString("pt-BR") : "data nao informada"}.`
+        : "Cadastre o certificado A1 da empresa para transmitir NF-e/NFC-e automaticamente.",
+    },
+    {
+      code: "NFCE_CSC",
+      ok: !config.habilitarNfce || Boolean(config.idTokenIsc && config.csc),
+      label: "CSC e idToken informados para NFC-e",
+      detail: config.habilitarNfce
+        ? "Obrigatorio para gerar QR Code de NFC-e."
+        : "NFC-e automatica ainda esta desabilitada.",
+    },
+    {
+      code: "PROVEDOR_FISCAL",
+      ok: providerConfigured,
+      label: "Provedor fiscal automatico configurado",
+      detail: providerConfigured
+        ? `Provedor ${activeProvider?.provedor || ENV.fiscalProvider} configurado para transmissao.`
+        : "Cadastre as credenciais do provedor fiscal da empresa ou configure FISCAL_PROVIDER no backend.",
+    },
+    {
+      code: "SAT_MFE",
+      ok: equipamentos.some((equipamento) => equipamento.status === "ATIVO"),
+      label: "Equipamento SAT/MFE ativo para PDV fiscal",
+      detail: equipamentos.length > 0
+        ? "Equipamentos cadastrados. O teste final depende do agent local conectado ao PDV."
+        : "Cadastre SAT/MFE apenas para estados/empresas que usam esse modelo.",
+    },
+  ];
+
+  return {
+    readyForAutomaticNfce: checks
+      .filter((check) => ["AMBIENTE", "CERTIFICADO_A1", "NFCE_CSC", "PROVEDOR_FISCAL"].includes(check.code))
+      .every((check) => check.ok),
+    readyForManualPortal: Boolean(config.ambiente),
+    readyForSatMfe: checks.find((check) => check.code === "SAT_MFE")?.ok || false,
+    provider: {
+      configured: providerConfigured,
+      name: activeProvider?.provedor || ENV.fiscalProvider || null,
+      baseUrl: activeProvider?.baseUrl || ENV.fiscalProviderBaseUrl || null,
+      supportedModels: providerConfigured ? ["NFCE", "NFE"] : [],
+    },
+    checks,
+  };
+}
+
+export async function listEventos(empresaId: number, documentoFiscalId?: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const conditions = [eq(fiscalEventos.empresaId, empresaId)];
+  if (documentoFiscalId) conditions.push(eq(fiscalEventos.documentoFiscalId, documentoFiscalId));
+  return db.select().from(fiscalEventos).where(and(...conditions)).orderBy(desc(fiscalEventos.createdAt));
+}
+
+export async function listTransmissoes(empresaId: number, documentoFiscalId?: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const conditions = [eq(fiscalTransmissoes.empresaId, empresaId)];
+  if (documentoFiscalId) conditions.push(eq(fiscalTransmissoes.documentoFiscalId, documentoFiscalId));
+  return db.select().from(fiscalTransmissoes).where(and(...conditions)).orderBy(desc(fiscalTransmissoes.createdAt));
+}
+
+export async function listCertificados(empresaId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db
+    .select({
+      id: certificadosDigitais.id,
+      tipo: certificadosDigitais.tipo,
+      nomeArquivo: certificadosDigitais.nomeArquivo,
+      caminhoSeguro: certificadosDigitais.caminhoSeguro,
+      validade: certificadosDigitais.validade,
+      cnpj: certificadosDigitais.cnpj,
+      razaoSocial: certificadosDigitais.razaoSocial,
+      ativo: certificadosDigitais.ativo,
+      createdAt: certificadosDigitais.createdAt,
+    })
+    .from(certificadosDigitais)
+    .where(eq(certificadosDigitais.empresaId, empresaId))
+    .orderBy(desc(certificadosDigitais.createdAt));
+}
+
+export async function createCertificado(empresaId: number, input: CertificadoDigitalInput) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const caminhoSeguro = input.arquivoBase64
+    ? saveCertificateFile(empresaId, input.nomeArquivo, input.arquivoBase64)
+    : input.caminhoSeguro;
+  if (!caminhoSeguro) throw new Error("Informe o arquivo A1 ou um caminho seguro para o certificado");
+
+  const [result] = await db.insert(certificadosDigitais).values({
+    empresaId,
+    tipo: "A1",
+    nomeArquivo: input.nomeArquivo,
+    caminhoSeguro,
+    senhaCriptografada: input.senha ? Buffer.from(input.senha).toString("base64") : null,
+    validade: input.validade ? new Date(input.validade) : null,
+    cnpj: input.cnpj,
+    razaoSocial: input.razaoSocial,
+    ativo: input.ativo,
+  });
+
+  return { success: true, id: result.insertId };
+}
+
+export async function testCertificado(empresaId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [certificado] = await db
+    .select()
+    .from(certificadosDigitais)
+    .where(and(eq(certificadosDigitais.id, id), eq(certificadosDigitais.empresaId, empresaId)))
+    .limit(1);
+  if (!certificado) throw new Error("Certificado nao encontrado");
+
+  const validade = certificado.validade ? new Date(certificado.validade) : null;
+  const vencido = validade ? validade.getTime() < Date.now() : true;
+  return {
+    ok: !vencido && Boolean(certificado.caminhoSeguro),
+    certificado: {
+      id: certificado.id,
+      nomeArquivo: certificado.nomeArquivo,
+      validade: certificado.validade,
+      cnpj: certificado.cnpj,
+      ativo: certificado.ativo,
+    },
+    issues: [
+      ...(!certificado.caminhoSeguro ? ["Certificado sem caminho seguro cadastrado"] : []),
+      ...(vencido ? ["Certificado vencido ou sem validade informada"] : []),
+    ],
+  };
+}
+
+export async function deactivateCertificado(empresaId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(certificadosDigitais).set({ ativo: false }).where(and(eq(certificadosDigitais.id, id), eq(certificadosDigitais.empresaId, empresaId)));
+  return { success: true };
+}
+
+export async function listSatMfeEquipamentos(empresaId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(satMfeEquipamentos).where(eq(satMfeEquipamentos.empresaId, empresaId)).orderBy(desc(satMfeEquipamentos.createdAt));
+}
+
+export async function createSatMfeEquipamento(empresaId: number, input: SatMfeEquipamentoInput) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(satMfeEquipamentos).values({
+    empresaId,
+    pdvId: input.pdvId,
+    tipo: input.tipo,
+    fabricante: input.fabricante,
+    modelo: input.modelo,
+    numeroSerie: input.numeroSerie,
+    codigoAtivacaoCriptografado: input.codigoAtivacao ? Buffer.from(input.codigoAtivacao).toString("base64") : null,
+    assinaturaAplicativoComercial: input.assinaturaAplicativoComercial,
+    cnpjSoftwareHouse: input.cnpjSoftwareHouse,
+    status: input.status,
+  });
+  return { success: true, id: result.insertId };
+}
+
+export async function testSatMfeEquipamento(empresaId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [equipamento] = await db
+    .select()
+    .from(satMfeEquipamentos)
+    .where(and(eq(satMfeEquipamentos.id, id), eq(satMfeEquipamentos.empresaId, empresaId)))
+    .limit(1);
+  if (!equipamento) throw new Error("Equipamento SAT/MFE nao encontrado");
+
+  await db.update(satMfeEquipamentos)
+    .set({ status: "NAO_TESTADO", ultimoTesteComunicacao: new Date() })
+    .where(and(eq(satMfeEquipamentos.id, id), eq(satMfeEquipamentos.empresaId, empresaId)));
+
+  return {
+    ok: false,
+    status: "AGENT_LOCAL_NECESSARIO",
+    message: "Equipamento cadastrado. O teste real precisa ser executado pelo agent local do PDV conectado ao SAT/MFE.",
+  };
+}
+
+export async function createSatMfeCupom(empresaId: number, input: SatMfeCupomInput) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [equipamento] = await db
+    .select()
+    .from(satMfeEquipamentos)
+    .where(and(eq(satMfeEquipamentos.id, input.equipamentoId), eq(satMfeEquipamentos.empresaId, empresaId)))
+    .limit(1);
+  if (!equipamento) throw new Error("Equipamento SAT/MFE nao encontrado");
+
+  const [result] = await db.insert(satMfeCupons).values({
+    empresaId,
+    vendaId: input.vendaId,
+    equipamentoId: input.equipamentoId,
+    modelo: input.modelo,
+    status: "PENDENTE_EQUIPAMENTO",
+    mensagemRetorno: "Cupom aguardando emissao pelo agent local do PDV.",
+  });
+
+  return { success: true, id: result.insertId, status: "PENDENTE_EQUIPAMENTO" };
+}
+
 async function incrementFiscalNumber(empresaId: number, modelo: "NFE" | "NFCE") {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -420,7 +962,7 @@ async function incrementFiscalNumber(empresaId: number, modelo: "NFE" | "NFCE") 
     .where(eq(configuracoesFiscais.empresaId, empresaId));
 }
 
-function buildDraftXml(modelo: "NFE" | "NFCE", numero: number, serie: number, vendaId: number) {
+function buildDraftXml(modelo: FiscalModelo, numero: number, serie: number, vendaId: number) {
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<documentoFiscalDraft modelo="${modelo}" numero="${numero}" serie="${serie}" vendaId="${vendaId}">`,
@@ -429,14 +971,14 @@ function buildDraftXml(modelo: "NFE" | "NFCE", numero: number, serie: number, ve
   ].join("\n");
 }
 
-async function buildAccessKey(empresaId: number, modelo: "NFE" | "NFCE", numero: number, serie: number) {
+async function buildAccessKey(empresaId: number, modelo: FiscalModelo, numero: number, serie: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const [empresa] = await db.select({ cnpj: empresas.cnpj }).from(empresas).where(eq(empresas.id, empresaId)).limit(1);
   const cnpj = String(empresa?.cnpj || "").replace(/\D/g, "").padStart(14, "0").slice(0, 14);
   const now = new Date();
   const aamm = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const modeloCodigo = modelo === "NFCE" ? "65" : "55";
+  const modeloCodigo = modelo === "NFCE" ? "65" : modelo === "NFE" ? "55" : "59";
   const base = `35${aamm}${cnpj}${modeloCodigo}${String(serie).padStart(3, "0")}${String(numero).padStart(9, "0")}100000001`;
   return `${base}${mod11(base)}`;
 }
@@ -452,7 +994,7 @@ function mod11(value: string) {
   return result >= 10 ? 0 : result;
 }
 
-async function buildFiscalXml(empresaId: number, modelo: "NFE" | "NFCE", numero: number, serie: number, vendaId: number, chaveAcesso: string | null, protocolo: string | null) {
+async function buildFiscalXml(empresaId: number, modelo: FiscalModelo, numero: number, serie: number, vendaId: number, chaveAcesso: string | null, protocolo: string | null) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const [empresa] = await db.select().from(empresas).where(eq(empresas.id, empresaId)).limit(1);
@@ -504,4 +1046,27 @@ function escapeXml(value: string) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
+}
+
+function isProviderFilePath(value: string) {
+  return value.startsWith("/") || value.startsWith("http://") || value.startsWith("https://");
+}
+
+function encodeSecret(value: string) {
+  return Buffer.from(value, "utf8").toString("base64");
+}
+
+function saveCertificateFile(empresaId: number, originalName: string, fileBase64: string) {
+  const raw = fileBase64.includes(",") ? fileBase64.split(",").pop() || "" : fileBase64;
+  const buffer = Buffer.from(raw, "base64");
+  const extension = path.extname(originalName).toLowerCase() || ".pfx";
+  if (![".pfx", ".p12"].includes(extension)) {
+    throw new Error("Certificado A1 deve ser um arquivo .pfx ou .p12");
+  }
+  const uploadDir = path.join(process.cwd(), "uploads", "certificados", String(empresaId));
+  if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+  const filename = `${nanoid()}${extension}`;
+  const filepath = path.join(uploadDir, filename);
+  fs.writeFileSync(filepath, buffer, { mode: 0o600 });
+  return filepath;
 }
