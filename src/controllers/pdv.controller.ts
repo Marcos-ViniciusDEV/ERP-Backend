@@ -3,7 +3,6 @@ import * as pdvService from "../services/pdv.service";
 import { sincronizarPDVSchema } from "../zod/pdv.schema";
 import { ZodError } from "zod";
 import * as pdvWebSocketService from "../services/pdv-websocket.service";
-import * as pagamentosService from "../services/pagamentos.service";
 
 /**
  * Controller para endpoints do PDV
@@ -18,6 +17,8 @@ export async function cargaInicial(req: Request, res: Response) {
     if (!empresaId) throw new Error("Acesso negado: empresaId não definido");
 
     const dados = await pdvService.getCargaInicial(empresaId);
+    // O terminal autenticado precisa dos hashes para validar operadores offline.
+    res.locals.allowedResponseSensitiveKeys = ["passwordHash"];
     res.json({
       success: true,
       data: dados,
@@ -50,7 +51,7 @@ export async function sincronizar(req: Request, res: Response) {
     // Se houve processamento com sucesso, transmitir atualização de estoque para todos os PDVs
     if (resultado.vendasProcessadas > 0 || resultado.movimentosProcessados > 0) {
       const dadosAtualizados = await pdvService.getCargaInicial(empresaId);
-      pdvWebSocketService.broadcastCatalog(dadosAtualizados);
+      pdvWebSocketService.broadcastCatalog(dadosAtualizados, empresaId);
     }
 
     // Retornar resultado
@@ -86,39 +87,30 @@ export async function getActivePDVs(req: Request, res: Response) {
     const empresaId = req.empresaId;
     if (!empresaId) throw new Error("Acesso negado: empresaId nao definido");
 
-    const pdvs = pdvWebSocketService.getActivePDVs();
-    const configPagamento = await pagamentosService.getPaymentConfigBundle(empresaId);
-    const terminais = configPagamento.terminaisPagamento || [];
-    const provedores = configPagamento.provedores || [];
-    const keyStatuses = await pdvService.listPinpadPairingKeyStatus(empresaId, pdvs.map((pdv: any) => pdv.id));
+    const pdvs = pdvWebSocketService.getActivePDVs(empresaId);
+    let keyStatuses: any[] = [];
+    try {
+      keyStatuses = await pdvService.listPinpadPairingKeyStatus(empresaId, pdvs.map((pdv: any) => pdv.id));
+    } catch (error: any) {
+      console.warn("[PDV] Status de PinPad indisponivel:", error.message);
+    }
     const empresa = await pdvService.getEmpresaIdentity(empresaId);
 
     const pdvsComMaquininha = pdvs.map((pdv: any) => {
-      const terminal = terminais.find((item: any) => item.ativo && item.pdvId === pdv.id);
-      const provedor = provedores.find((item: any) => item.id === terminal?.provedorId);
       const pinpadKey = keyStatuses.find((item) => item.pdvId === pdv.id);
 
       return {
         ...pdv,
         cnpjVinculado: empresa?.cnpj || null,
         pinpadKey,
-        maquininha: terminal
-          ? {
-              conectada: true,
-              nomeTerminal: terminal.nomeTerminal,
-              tipo: terminal.tipo,
-              provedor: provedor?.nome || null,
-              status: terminal.ultimoStatus || "Nao testado",
-              identificador: terminal.serialEquipamento || terminal.codigoTerminal || terminal.terminalTef || null,
-            }
-          : {
-              conectada: false,
-              nomeTerminal: null,
-              tipo: null,
-              provedor: null,
-              status: "Sem maquininha vinculada",
-              identificador: null,
-            },
+        maquininha: {
+          conectada: false,
+          nomeTerminal: null,
+          tipo: null,
+          provedor: null,
+          status: "Modulo de pagamento nao carregado",
+          identificador: null,
+        },
       };
     });
 
@@ -147,7 +139,7 @@ export async function gerarPinpadKey(req: Request, res: Response) {
       return;
     }
 
-    const online = pdvWebSocketService.getActivePDVs().some((pdv: any) => pdv.id === pdvId);
+    const online = pdvWebSocketService.getActivePDVs(empresaId).some((pdv: any) => pdv.id === pdvId);
     if (!online) {
       res.status(400).json({ success: false, error: "O PDV precisa estar online para gerar a chave do PinPad" });
       return;
@@ -164,6 +156,33 @@ export async function gerarPinpadKey(req: Request, res: Response) {
     res.status(500).json({
       success: false,
       error: "Erro ao gerar chave PinPad",
+      message: error.message,
+    });
+  }
+}
+
+export async function gerarTokenAcesso(req: Request, res: Response) {
+  try {
+    const empresaId = req.empresaId;
+    if (!empresaId) throw new Error("Acesso negado: empresaId nao definido");
+
+    const pdvId = String(req.body?.pdvId || "").trim();
+    if (!pdvId) {
+      res.status(400).json({ success: false, error: "pdvId e obrigatorio" });
+      return;
+    }
+
+    const data = await pdvService.generatePdvAccessToken(empresaId, pdvId);
+    res.json({
+      success: true,
+      data,
+      message: `Token de sincronizacao gerado para o PDV ${pdvId}`,
+    });
+  } catch (error: any) {
+    console.error("Erro ao gerar token de acesso do PDV:", error);
+    res.status(500).json({
+      success: false,
+      error: "Erro ao gerar token de acesso do PDV",
       message: error.message,
     });
   }
@@ -186,13 +205,13 @@ export async function enviarCarga(req: Request, res: Response) {
     if (pdvIds && Array.isArray(pdvIds)) {
       // Enviar para PDVs específicos
       for (const pdvId of pdvIds) {
-        if (pdvWebSocketService.sendCatalogToPDV(pdvId, dados)) {
+        if (pdvWebSocketService.sendCatalogToPDV(empresaId, pdvId, dados)) {
           sent++;
         }
       }
     } else {
       // Enviar para todos
-      sent = pdvWebSocketService.broadcastCatalog(dados);
+      sent = pdvWebSocketService.broadcastCatalog(dados, empresaId);
     }
 
     res.json({
@@ -251,15 +270,17 @@ export async function listMovements(req: Request, res: Response) {
  */
 export async function heartbeat(req: Request, res: Response) {
   try {
-    const { pdvId } = req.body;
+    const { pdvId, name, location } = req.body;
 
     if (!pdvId) {
       res.status(400).json({ success: false, error: "pdvId é obrigatório" });
       return;
     }
 
-    // Atualiza o status no mapa de PDVs do WebSocket service (se conectado via WS)
-    // Mesmo sem WS, o heartbeat confirma que o PDV está online via HTTP
+    const empresaId = req.empresaId;
+    if (!empresaId) throw new Error("Acesso negado: empresaId nao definido");
+
+    pdvWebSocketService.registerHttpHeartbeat(empresaId, pdvId, name, location);
     console.log(`[Heartbeat] PDV ${pdvId} online (HTTP) - empresaId: ${req.empresaId}`);
 
     res.json({

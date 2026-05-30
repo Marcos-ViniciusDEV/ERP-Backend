@@ -201,7 +201,7 @@ export async function updateTerminal(req: Request, res: Response) {
 export async function sendPdvLoad(req: Request, res: Response) {
   try {
     const carga = await pdvService.getCargaInicial(req.empresaId!);
-    const sent = pdvWebSocketService.broadcastCatalog(carga);
+    const sent = pdvWebSocketService.broadcastCatalog(carga, req.empresaId!);
     res.json({ requested: true, sent });
   } catch (error: any) {
     res.status(500).json({ error: error.message || "Erro ao enviar carga para PDVs" });
@@ -211,7 +211,7 @@ export async function sendPdvLoad(req: Request, res: Response) {
 async function maybeSendPdvLoad(req: Request, config: any) {
   if (req.query.enviarCarga === "true" || req.body?.enviarCargaPdv === true || config?.enviarCargaAutomaticaPdv) {
     const carga = await pdvService.getCargaInicial(req.empresaId!);
-    const sent = pdvWebSocketService.broadcastCatalog(carga);
+    const sent = pdvWebSocketService.broadcastCatalog(carga, req.empresaId!);
     return { requested: true, sent };
   }
 

@@ -100,6 +100,32 @@ export async function createToken(user: User): Promise<string> {
 }
 
 /**
+ * Cria um token estavel para sincronizacao do PDV desktop.
+ *
+ * Diferente do token de login do usuario, este token nao recebe iat/exp.
+ * Com o mesmo JWT_SECRET, empresaId e pdvId, o valor gerado permanece igual.
+ */
+export async function createStablePdvToken(input: {
+  empresaId: number;
+  pdvId: string;
+  name?: string | null;
+}): Promise<string> {
+  const secretKey = getTokenSecret();
+  const cleanPdvId = input.pdvId.trim();
+
+  return new SignJWT({
+    userId: 0,
+    openId: `pdv_${input.empresaId}_${cleanPdvId}`,
+    email: `pdv-${cleanPdvId}@empresa-${input.empresaId}.internal`,
+    name: input.name || `PDV ${cleanPdvId}`,
+    role: "pdv_operator",
+    empresaId: input.empresaId,
+  })
+    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+    .sign(secretKey);
+}
+
+/**
  * Verifica e valida um token JWT
  * @param token - Token JWT a ser verificado
  * @returns Payload do token se válido, null se inválido ou expirado

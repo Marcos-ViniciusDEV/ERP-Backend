@@ -8,12 +8,12 @@ const SENSITIVE_KEYS = new Set([
   "tokenAutenticacao",
 ]);
 
-export function sanitizeResponse<T>(value: T, depth = 0): T {
+export function sanitizeResponse<T>(value: T, depth = 0, allowedSensitiveKeys = new Set<string>()): T {
   if (value === null || value === undefined) return value;
   if (depth > 8) return value;
 
   if (Array.isArray(value)) {
-    return value.map((item) => sanitizeResponse(item, depth + 1)) as T;
+    return value.map((item) => sanitizeResponse(item, depth + 1, allowedSensitiveKeys)) as T;
   }
 
   if (value instanceof Date) return value;
@@ -21,8 +21,8 @@ export function sanitizeResponse<T>(value: T, depth = 0): T {
   if (typeof value === "object") {
     const safe: Record<string, unknown> = {};
     for (const [key, nestedValue] of Object.entries(value as Record<string, unknown>)) {
-      if (SENSITIVE_KEYS.has(key)) continue;
-      safe[key] = sanitizeResponse(nestedValue, depth + 1);
+      if (SENSITIVE_KEYS.has(key) && !allowedSensitiveKeys.has(key)) continue;
+      safe[key] = sanitizeResponse(nestedValue, depth + 1, allowedSensitiveKeys);
     }
     return safe as T;
   }

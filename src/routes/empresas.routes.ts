@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or, sql } from "drizzle-orm";
 import { getDb } from "../libs/db";
 import { empresas, pdvsAtivos, users } from "../../drizzle/schema";
 import { createToken } from "../services/auth.service";
@@ -26,12 +26,19 @@ empresasRouter.post("/pdv/ativar", async (req: Request, res: Response) => {
 
     const db = await getDb();
     if (!db) throw new Error("Database not available");
+    const cnpjDigits = String(codigoEmpresa).replace(/\D/g, "");
 
     // Buscar empresa pelo código de acesso
     const empresaResult = await db
       .select()
       .from(empresas)
-      .where(and(eq(empresas.codigoAcesso, codigoEmpresa), eq(empresas.ativo, true)))
+      .where(and(
+        or(
+          eq(empresas.codigoAcesso, codigoEmpresa),
+          sql`REPLACE(REPLACE(REPLACE(${empresas.cnpj}, '.', ''), '/', ''), '-', '') = ${cnpjDigits}`
+        ),
+        eq(empresas.ativo, true)
+      ))
       .limit(1);
 
     const empresa = empresaResult[0];

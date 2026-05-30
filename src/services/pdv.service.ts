@@ -8,6 +8,7 @@ import {
   movimentacoesEstoque,
   configuracoesFiscais,
   empresas,
+  pdvsAtivos,
   pinpadPareamentoKeys,
   terminaisPagamento,
 } from "../../drizzle/schema";
@@ -15,6 +16,7 @@ import { createHash, randomBytes } from "crypto";
 import { eq, and, sql } from "drizzle-orm";
 import type { VendaPDV, MovimentoCaixaPDV } from "../zod/pdv.schema";
 import * as pagamentosService from "./pagamentos.service";
+import { createStablePdvToken } from "./auth.service";
 
 /**
  * Retorna dados para carga inicial do PDV
@@ -104,7 +106,27 @@ export async function getCargaInicial(empresaId: number) {
     .where(eq(empresas.id, empresaId))
     .limit(1);
 
-  const configuracoesPagamento = await pagamentosService.getPaymentConfigBundle(empresaId);
+  let configuracoesPagamento: any = {
+    formasPagamento: [],
+    adquirentes: [],
+    terminais: [],
+    terminaisPagamento: [],
+    taxas: [],
+    versaoCarga: 0,
+    habilitarPagamentosManuais: true,
+    habilitarTef: false,
+    habilitarPosApi: false,
+    habilitarPixIntegrado: false,
+    modoPadraoCartao: "manual",
+    exigirNsuNoManual: false,
+    permitirVendaOfflineCartaoManual: true,
+    permitirVendaOfflineTef: false,
+  };
+  try {
+    configuracoesPagamento = await pagamentosService.getPaymentConfigBundle(empresaId) || configuracoesPagamento;
+  } catch (error: any) {
+    console.warn("[PDV] Configuracao de pagamento indisponivel na carga inicial:", error.message);
+  }
   const formasPagamentoPdv = configuracoesPagamento.formasPagamento
     .filter((forma: any) => forma.ativo)
     .map((forma: any) => ({
@@ -174,6 +196,57 @@ export async function getEmpresaIdentity(empresaId: number) {
     .where(eq(empresas.id, empresaId))
     .limit(1);
   return empresa || null;
+}
+
+export async function generatePdvAccessToken(empresaId: number, pdvId: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const cleanPdvId = String(pdvId || "").trim();
+  if (!cleanPdvId) throw new Error("ID do PDV e obrigatorio");
+
+  const [empresa] = await db
+    .select({
+      id: empresas.id,
+      cnpj: empresas.cnpj,
+      nomeFantasia: empresas.nomeFantasia,
+      razaoSocial: empresas.razaoSocial,
+    })
+    .from(empresas)
+    .where(eq(empresas.id, empresaId))
+    .limit(1);
+
+  if (!empresa?.cnpj) throw new Error("Empresa/CNPJ nao encontrado para gerar token do PDV");
+
+  const [existingPdv] = await db
+    .select()
+    .from(pdvsAtivos)
+    .where(and(eq(pdvsAtivos.empresaId, empresaId), eq(pdvsAtivos.pdvId, cleanPdvId)))
+    .limit(1);
+
+  if (!existingPdv) {
+    await db.insert(pdvsAtivos).values({
+      empresaId,
+      pdvId: cleanPdvId,
+      apelido: `PDV - ${cleanPdvId}`,
+      ultimoAcesso: new Date(),
+      ativo: true,
+    });
+  }
+
+  const token = await createStablePdvToken({
+    empresaId,
+    pdvId: cleanPdvId,
+    name: empresa.nomeFantasia || empresa.razaoSocial,
+  });
+
+  return {
+    empresaId,
+    cnpjEmpresa: empresa.cnpj,
+    nomeEmpresa: empresa.nomeFantasia || empresa.razaoSocial,
+    pdvId: cleanPdvId,
+    token,
+  };
 }
 
 export async function generatePinpadPairingKey(empresaId: number, pdvId: string) {

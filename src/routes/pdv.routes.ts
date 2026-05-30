@@ -17,6 +17,9 @@ pdvRouter.get("/ativos", pdvController.getActivePDVs);
 // POST /api/pdv/:pdvId/pinpad-key - Gera chave unica para parear PinPad/maquininha ao PDV
 pdvRouter.post("/:pdvId/pinpad-key", pdvController.gerarPinpadKey);
 
+// POST /api/pdv/token-acesso - Gera token estavel para sincronizacao do PDV desktop
+pdvRouter.post("/token-acesso", pdvController.gerarTokenAcesso);
+
 // POST /api/pdv/enviar-carga - Envia carga para PDVs
 pdvRouter.post("/enviar-carga", pdvController.enviarCarga);
 
