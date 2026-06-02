@@ -15,6 +15,9 @@ const validateCompanySchema = z.object({
 });
 
 authRouter.post("/login", validate(z.object({ body: loginSchema })), authController.login);
+authRouter.post("/refresh", authController.refresh);
+authRouter.post("/logout", authController.logout);
 authRouter.post("/validate-company", validate(validateCompanySchema), authController.validateCompany);
+authRouter.post("/checkout-company", validate(validateCompanySchema), authController.checkoutCompany);
 authRouter.post("/register", validate(z.object({ body: registerSchema })), authController.register);
 authRouter.get("/me", authenticate, authController.me);

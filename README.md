@@ -165,8 +165,26 @@ npm run dev
 # Database
 DATABASE_URL=mysql://user:password@localhost:3306/erp_db
 
-# JWT
-JWT_SECRET=your-secret-key
+# JWT (use at least 64 random characters in production)
+# Example generation: node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+JWT_SECRET=your-strong-random-secret
+REFRESH_TOKEN_DAYS=7
+FISCAL_PENDING_WARNING_MINUTES=15
+FISCAL_PENDING_CRITICAL_MINUTES=60
+FISCAL_CONTINGENCY_LEGAL_HOURS=24
+FISCAL_POLLING_INTERVAL_MS=60000
+FISCAL_POLLING_BATCH_SIZE=20
+
+# Mercado Pago: checkout comercial PIX da assinatura SaaS
+MERCADO_PAGO_ACCESS_TOKEN=APP_USR-your-access-token
+MERCADO_PAGO_PUBLIC_KEY=APP_USR-your-public-key
+MERCADO_PAGO_WEBHOOK_SECRET=your-webhook-secret
+MERCADO_PAGO_WEBHOOK_URL=https://erp.example.com/api/checkout/webhooks/mercado-pago
+
+# Encryption for persisted provider/certificate secrets
+# Use a different strong random value in production. Existing installations
+# temporarily fall back to JWT_SECRET until this variable is configured.
+SECRETS_ENCRYPTION_KEY=your-dedicated-encryption-key
 
 # AWS S3 (optional)
 AWS_ACCESS_KEY_ID=your-access-key
@@ -178,6 +196,35 @@ AWS_BUCKET_NAME=your-bucket
 PORT=3000
 NODE_ENV=development
 ```
+
+---
+
+## Commercial checkout
+
+The public checkout uses Mercado Pago Payment Brick for PIX, card and boleto payments:
+
+```text
+GET  /api/checkout/planos
+GET  /api/checkout/configuracao
+POST /api/checkout/pix
+POST /api/checkout/pagamentos
+GET  /api/checkout/:uuid/status
+POST /api/checkout/webhooks/mercado-pago
+```
+
+Configure a publicly accessible `MERCADO_PAGO_WEBHOOK_URL`; Mercado Pago cannot notify `localhost`.
+
+---
+
+## Health checks
+
+```text
+GET /health        # Liveness compativel com instalacoes existentes
+GET /health/live   # Processo HTTP ativo, sem depender do banco
+GET /health/ready  # Pronto para trafego somente quando o MySQL responder
+```
+
+Use `/health/live` para reinicio automatico do processo e `/health/ready` para retirar a instancia do balanceador quando o banco estiver indisponivel.
 
 ---
 

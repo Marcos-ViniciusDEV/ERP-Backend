@@ -9,6 +9,8 @@ import {
   contasReceber,
   users,
   clientes,
+  returns,
+  returnItems,
 } from "../../drizzle/schema";
 import { eq, and, sql, desc, or, asc } from "drizzle-orm";
 
@@ -32,6 +34,32 @@ const dateRange = (startDate?: string, endDate?: string) => ({
 });
 
 const percent = (value: number, total: number) => total > 0 ? Number(((value / total) * 100).toFixed(2)) : 0;
+
+export const calculateSuggestedSalePrice = (cost: number, marginPercent: number) =>
+  cost > 0 && marginPercent < 100 ? Math.ceil(cost / (1 - marginPercent / 100)) : null;
+
+export const calculateNetProductMargin = (
+  sale: { quantidadeVendida: number; receitaLiquida: number; custoTotal: number },
+  returned?: { quantidadeDevolvida: number; receitaDevolvida: number; custoDevolvido: number },
+) => {
+  const quantidadeDevolvida = returned?.quantidadeDevolvida ?? 0;
+  const receitaDevolvida = returned?.receitaDevolvida ?? 0;
+  const custoDevolvido = returned?.custoDevolvido ?? 0;
+  const quantidadeLiquida = sale.quantidadeVendida - quantidadeDevolvida;
+  const receitaLiquidaAposDevolucoes = sale.receitaLiquida - receitaDevolvida;
+  const custoLiquido = sale.custoTotal - custoDevolvido;
+  const lucroBruto = receitaLiquidaAposDevolucoes - custoLiquido;
+  return {
+    quantidadeDevolvida,
+    quantidadeLiquida,
+    receitaDevolvida,
+    receitaLiquidaAposDevolucoes,
+    custoDevolvido,
+    custoLiquido,
+    lucroBruto,
+    margemPercentual: percent(lucroBruto, receitaLiquidaAposDevolucoes),
+  };
+};
 
 const saleConditions = (empresaId: number, filters: AnalyticsFilters = {}, onlyCompleted = true) => {
   const { start, end } = dateRange(filters.startDate, filters.endDate);
@@ -606,9 +634,44 @@ export async function getProfitByPeriod(empresaId: number, filters: AnalyticsFil
     lucroBruto: acc.lucroBruto + row.lucroBruto,
   }), { receitaLiquida: 0, custoTotal: 0, lucroBruto: 0 });
 
+  let periodoAnterior = null;
+  if (filters.startDate && filters.endDate) {
+    const currentStart = new Date(`${filters.startDate}T00:00:00`);
+    const currentEnd = new Date(`${filters.endDate}T23:59:59`);
+    const previousEnd = new Date(currentStart.getTime() - 1);
+    const previousStart = new Date(previousEnd.getTime() - (currentEnd.getTime() - currentStart.getTime()));
+    const previousFilters = {
+      ...filters,
+      startDate: previousStart.toISOString().slice(0, 10),
+      endDate: previousEnd.toISOString().slice(0, 10),
+    };
+    const [previous] = await db.select({
+      receitaLiquida: sql<number>`coalesce(sum(${itemNetExpression}), 0)`.mapWith(Number),
+      custoTotal: sql<number>`coalesce(sum(${itensVenda.quantidade} * ${costExpression}), 0)`.mapWith(Number),
+    })
+      .from(itensVenda)
+      .innerJoin(vendas, eq(itensVenda.vendaId, vendas.id))
+      .innerJoin(produtos, eq(itensVenda.produtoId, produtos.id))
+      .where(and(...saleConditions(empresaId, previousFilters, true)));
+    const receitaLiquida = previous?.receitaLiquida ?? 0;
+    const custoTotal = previous?.custoTotal ?? 0;
+    const lucroBruto = receitaLiquida - custoTotal;
+    periodoAnterior = {
+      periodo: { inicio: previousFilters.startDate, fim: previousFilters.endDate },
+      receitaLiquida,
+      custoTotal,
+      lucroBruto,
+      margemPercentual: percent(lucroBruto, receitaLiquida),
+      variacaoLucroPercentual: lucroBruto !== 0
+        ? Number((((totals.lucroBruto - lucroBruto) / Math.abs(lucroBruto)) * 100).toFixed(2))
+        : null,
+    };
+  }
+
   return {
     agrupamento: days > 62 ? "MES" : "DIA",
     totais: { ...totals, margemPercentual: percent(totals.lucroBruto, totals.receitaLiquida) },
+    periodoAnterior,
     series,
   };
 }
@@ -617,6 +680,7 @@ export async function getProductMargins(empresaId: number, filters: AnalyticsFil
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const limit = Math.min(filters.limit ?? 50, 200);
+  const { start, end } = dateRange(filters.startDate, filters.endDate);
   const conditions = [...saleConditions(empresaId, filters, true), eq(produtos.empresaId, empresaId)];
   if (filters.produtoId) conditions.push(eq(produtos.id, filters.produtoId));
   if (filters.departamentoId) conditions.push(eq(produtos.departamentoId, filters.departamentoId));
@@ -643,18 +707,41 @@ export async function getProductMargins(empresaId: number, filters: AnalyticsFil
     .orderBy(desc(sql`sum(${itemNetExpression})`))
     .limit(limit);
 
+  const returnConditions = [
+    eq(vendas.empresaId, empresaId),
+    eq(produtos.empresaId, empresaId),
+    sql`${returns.createdAt} >= ${start}`,
+    sql`${returns.createdAt} <= ${end}`,
+  ];
+  if (filters.produtoId) returnConditions.push(eq(produtos.id, filters.produtoId));
+  if (filters.departamentoId) returnConditions.push(eq(produtos.departamentoId, filters.departamentoId));
+
+  const returnedRows = await db.select({
+    produtoId: returnItems.produtoId,
+    quantidadeDevolvida: sql<number>`coalesce(sum(${returnItems.quantidade}), 0)`.mapWith(Number),
+    receitaDevolvida: sql<number>`coalesce(sum(${returnItems.quantidade} * ${itensVenda.precoUnitario}), 0)`.mapWith(Number),
+    custoDevolvido: sql<number>`coalesce(sum(${returnItems.quantidade} * ${costExpression}), 0)`.mapWith(Number),
+  })
+    .from(returnItems)
+    .innerJoin(returns, eq(returnItems.returnId, returns.id))
+    .innerJoin(vendas, eq(returns.originalSaleId, vendas.id))
+    .innerJoin(itensVenda, and(eq(itensVenda.vendaId, vendas.id), eq(itensVenda.produtoId, returnItems.produtoId)))
+    .innerJoin(produtos, and(eq(produtos.id, returnItems.produtoId), eq(produtos.empresaId, empresaId)))
+    .where(and(...returnConditions))
+    .groupBy(returnItems.produtoId);
+
+  const returnedByProduct = new Map(returnedRows.map((item) => [item.produtoId, item]));
   return rows.map((row) => {
-    const lucroBruto = row.receitaLiquida - row.custoTotal;
-    const margemPercentual = percent(lucroBruto, row.receitaLiquida);
+    const returned = returnedByProduct.get(row.produtoId);
+    const net = calculateNetProductMargin(row, returned);
     const alertas = [];
     if (row.custoUnitario <= 0) alertas.push("SEM_CUSTO");
-    if (lucroBruto < 0) alertas.push("MARGEM_NEGATIVA");
-    if (margemPercentual < (row.margemMinima ?? 0)) alertas.push("MARGEM_ABAIXO_DA_META");
+    if (net.lucroBruto < 0) alertas.push("MARGEM_NEGATIVA");
+    if (net.margemPercentual < (row.margemMinima ?? 0)) alertas.push("MARGEM_ABAIXO_DA_META");
     return {
       ...row,
-      lucroBruto,
-      margemPercentual,
-      ticketMedioProduto: row.quantidadeVendida > 0 ? Math.round(row.receitaLiquida / row.quantidadeVendida) : 0,
+      ...net,
+      ticketMedioProduto: net.quantidadeLiquida > 0 ? Math.round(net.receitaLiquidaAposDevolucoes / net.quantidadeLiquida) : 0,
       alertas,
     };
   });
@@ -673,6 +760,7 @@ export async function getLowMarginProducts(empresaId: number, filters: Analytics
       perdaEstimadaLucro: item.margemPercentual < threshold
         ? Math.round(item.receitaLiquida * ((threshold - item.margemPercentual) / 100))
         : 0,
+      precoVendaSugerido: calculateSuggestedSalePrice(item.custoUnitario, threshold),
     }));
 }
 
@@ -698,18 +786,37 @@ export async function getOperatorsRisk(empresaId: number, filters: AnalyticsFilt
     .orderBy(desc(sql`coalesce(sum(${vendas.valorDesconto}), 0)`))
     .limit(Math.min(filters.limit ?? 50, 200));
 
-  return rows.map((row) => ({
+  const mapped = rows.map((row) => ({
     ...row,
     percentualCancelamento: percent(row.totalCancelamentos, row.totalVendas),
     percentualDesconto: percent(row.totalDescontos, row.receitaLiquida + row.totalDescontos),
     ticketMedio: row.vendasConcluidas > 0 ? Math.round(row.receitaLiquida / row.vendasConcluidas) : 0,
+  }));
+  const mediaCancelamento = mapped.length > 0
+    ? mapped.reduce((total, row) => total + row.percentualCancelamento, 0) / mapped.length
+    : 0;
+  const mediaDesconto = mapped.length > 0
+    ? mapped.reduce((total, row) => total + row.percentualDesconto, 0) / mapped.length
+    : 0;
+
+  return mapped.map((row) => ({
+    ...row,
+    alertas: [
+      ...(row.percentualCancelamento > mediaCancelamento ? ["CANCELAMENTO_ACIMA_DA_MEDIA"] : []),
+      ...(row.percentualDesconto > mediaDesconto ? ["DESCONTO_ACIMA_DA_MEDIA"] : []),
+    ],
   }));
 }
 
 export async function getCustomerRanking(empresaId: number, filters: AnalyticsFilters = {}) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const [sales] = await db.select({
+  const { start, end } = dateRange(filters.startDate, filters.endDate);
+  const limit = Math.min(filters.limit ?? 50, 200);
+  const sales = await db.select({
+    clienteId: vendas.clienteId,
+    nome: sql<string>`coalesce(${clientes.nome}, 'Cliente nao identificado')`,
+    documento: clientes.cpfCnpj,
     totalComprado: sql<number>`coalesce(sum(${vendas.valorLiquido}), 0)`.mapWith(Number),
     quantidadeCompras: sql<number>`count(*)`.mapWith(Number),
     ultimaCompra: sql<string>`max(${vendas.dataVenda})`,
@@ -717,29 +824,55 @@ export async function getCustomerRanking(empresaId: number, filters: AnalyticsFi
     descontosRecebidos: sql<number>`coalesce(sum(${vendas.valorDesconto}), 0)`.mapWith(Number),
   })
     .from(vendas)
-    .where(and(...saleConditions(empresaId, filters, true)));
+    .leftJoin(clientes, and(eq(vendas.clienteId, clientes.id), eq(clientes.empresaId, empresaId)))
+    .where(and(...saleConditions(empresaId, filters, true)))
+    .groupBy(vendas.clienteId, clientes.nome, clientes.cpfCnpj)
+    .orderBy(desc(sql`sum(${vendas.valorLiquido})`))
+    .limit(limit);
 
-  const customers = await db.select({ totalClientesCadastrados: sql<number>`count(*)`.mapWith(Number) })
+  const costs = await db.select({
+    clienteId: vendas.clienteId,
+    custoMercadorias: sql<number>`coalesce(sum(${itensVenda.quantidade} * ${costExpression}), 0)`.mapWith(Number),
+  })
+    .from(itensVenda)
+    .innerJoin(vendas, eq(itensVenda.vendaId, vendas.id))
+    .innerJoin(produtos, and(eq(itensVenda.produtoId, produtos.id), eq(produtos.empresaId, empresaId)))
+    .where(and(...saleConditions(empresaId, filters, true)))
+    .groupBy(vendas.clienteId);
+
+  const [customers] = await db.select({
+    totalClientesCadastrados: sql<number>`count(*)`.mapWith(Number),
+    clientesNovos: sql<number>`coalesce(sum(case when ${clientes.createdAt} >= ${start} and ${clientes.createdAt} <= ${end} then 1 else 0 end), 0)`.mapWith(Number),
+  })
     .from(clientes)
     .where(and(eq(clientes.empresaId, empresaId), eq(clientes.ativo, true)));
 
-  const totalComprado = sales?.totalComprado ?? 0;
-  const quantidadeCompras = sales?.quantidadeCompras ?? 0;
+  const costsByCustomer = new Map(costs.map((item) => [item.clienteId, item.custoMercadorias]));
+  const items = sales.map((sale) => {
+    const custoMercadorias = costsByCustomer.get(sale.clienteId) ?? 0;
+    const margemGerada = sale.totalComprado - custoMercadorias;
+    return {
+      ...sale,
+      ticketMedio: sale.quantidadeCompras > 0 ? Math.round(sale.totalComprado / sale.quantidadeCompras) : 0,
+      custoMercadorias,
+      margemGerada,
+      margemPercentual: percent(margemGerada, sale.totalComprado),
+    };
+  });
+  const clientesComCompra = new Set(items.map((item) => item.clienteId).filter((id): id is number => id !== null)).size;
+  const totalClientesCadastrados = customers?.totalClientesCadastrados ?? 0;
+
   return {
-    warning: "A tabela de vendas ainda nao possui clienteId. O ranking detalhado por cliente depende desse vinculo; por enquanto as vendas aparecem agrupadas como cliente nao identificado.",
-    totalClientesCadastrados: customers[0]?.totalClientesCadastrados ?? 0,
-    items: totalComprado > 0 ? [{
-      clienteId: null,
-      nome: "Cliente nao identificado",
-      documento: null,
-      totalComprado,
-      quantidadeCompras,
-      ticketMedio: quantidadeCompras > 0 ? Math.round(totalComprado / quantidadeCompras) : 0,
-      ultimaCompra: sales?.ultimaCompra,
-      primeiraCompra: sales?.primeiraCompra,
-      margemGerada: null,
-      descontosRecebidos: sales?.descontosRecebidos ?? 0,
-    }] : [],
+    totalClientesCadastrados,
+    clientesComCompra,
+    clientesNovos: customers?.clientesNovos ?? 0,
+    clientesInativos: Math.max(0, totalClientesCadastrados - clientesComCompra),
+    items,
+    rankings: {
+      porValor: items,
+      porMargem: [...items].sort((a, b) => b.margemGerada - a.margemGerada),
+      porFrequencia: [...items].sort((a, b) => b.quantidadeCompras - a.quantidadeCompras),
+    },
   };
 }
 

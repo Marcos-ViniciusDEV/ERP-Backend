@@ -1,9 +1,10 @@
 import axios from "axios";
 import { and, eq } from "drizzle-orm";
-import { clientes, empresas, fiscalProvedorCredenciais, itensVenda, produtos, vendas } from "../../drizzle/schema";
+import { clientes, empresas, fiscalProvedorGlobalCredenciais, itensVenda, produtos, vendas } from "../../drizzle/schema";
 import { getDb } from "../libs/db";
 import { ENV } from "../libs/env";
-import type { FiscalPrepareInput } from "../zod/fiscal.schema";
+import { decryptSecret, encryptSecret } from "../libs/secret-crypto";
+import type { FiscalPrepareInput, FiscalProviderCredentialInput } from "../zod/fiscal.schema";
 
 type FiscalModelo = "NFE" | "NFCE" | "SAT" | "MFE";
 
@@ -44,9 +45,49 @@ export function hasFiscalProvider() {
   return Boolean(ENV.fiscalProvider && ENV.fiscalProviderToken);
 }
 
-export async function hasFiscalProviderForCompany(empresaId: number, ambiente: "HOMOLOGACAO" | "PRODUCAO") {
-  const credential = await getProviderCredential(empresaId, ambiente);
+export async function hasFiscalProviderForCompany(_empresaId: number, ambiente: "HOMOLOGACAO" | "PRODUCAO") {
+  const credential = await getProviderCredential(ambiente);
   return Boolean(credential);
+}
+
+export async function listGlobalFiscalProviderCredentials() {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: fiscalProvedorGlobalCredenciais.id,
+      provedor: fiscalProvedorGlobalCredenciais.provedor,
+      ambiente: fiscalProvedorGlobalCredenciais.ambiente,
+      baseUrl: fiscalProvedorGlobalCredenciais.baseUrl,
+      companyId: fiscalProvedorGlobalCredenciais.companyId,
+      ativo: fiscalProvedorGlobalCredenciais.ativo,
+      updatedAt: fiscalProvedorGlobalCredenciais.updatedAt,
+    })
+    .from(fiscalProvedorGlobalCredenciais);
+}
+
+export async function upsertGlobalFiscalProviderCredential(input: FiscalProviderCredentialInput, usuarioId?: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [existing] = await db
+    .select()
+    .from(fiscalProvedorGlobalCredenciais)
+    .where(eq(fiscalProvedorGlobalCredenciais.ambiente, input.ambiente))
+    .limit(1);
+  const payload = {
+    provedor: input.provedor,
+    tokenCriptografado: encryptSecret(input.token)!,
+    baseUrl: input.baseUrl || null,
+    companyId: input.companyId || null,
+    ativo: input.ativo,
+    atualizadoPorUsuarioId: usuarioId || null,
+  };
+  if (existing) {
+    await db.update(fiscalProvedorGlobalCredenciais).set(payload).where(eq(fiscalProvedorGlobalCredenciais.id, existing.id));
+    return { success: true, id: existing.id };
+  }
+  const [result] = await db.insert(fiscalProvedorGlobalCredenciais).values({ ...payload, ambiente: input.ambiente });
+  return { success: true, id: result.insertId };
 }
 
 export async function emitFiscalDocumentWithProvider(
@@ -56,7 +97,7 @@ export async function emitFiscalDocumentWithProvider(
   numero: number,
   serie: number,
 ) {
-  const credential = await getProviderCredential(empresaId, config.ambiente);
+  const credential = await getProviderCredential(config.ambiente);
   if (!credential) return null;
 
   const provider = credential.provider.toLowerCase();
@@ -67,8 +108,8 @@ export async function emitFiscalDocumentWithProvider(
   return emitWithFocusNfe(empresaId, input, config, numero, serie, credential);
 }
 
-export async function downloadFiscalProviderFile(pathOrUrl: string, ambiente: "HOMOLOGACAO" | "PRODUCAO", empresaId?: number) {
-  const credential = empresaId ? await getProviderCredential(empresaId, ambiente) : getEnvProviderCredential(ambiente);
+export async function downloadFiscalProviderFile(pathOrUrl: string, ambiente: "HOMOLOGACAO" | "PRODUCAO", _empresaId?: number) {
+  const credential = await getProviderCredential(ambiente);
   if (!credential) return null;
   const provider = credential.provider.toLowerCase();
   if (provider !== "focus_nfe" && provider !== "focus") return null;
@@ -88,7 +129,7 @@ export async function downloadFiscalProviderFile(pathOrUrl: string, ambiente: "H
 }
 
 export async function cancelFiscalDocumentWithProvider(empresaId: number, document: any, justificativa: string) {
-  const credential = await getProviderCredential(empresaId, document.ambiente);
+  const credential = await getProviderCredential(document.ambiente);
   if (!credential) return null;
 
   const provider = credential.provider.toLowerCase();
@@ -117,6 +158,36 @@ export async function cancelFiscalDocumentWithProvider(empresaId: number, docume
     httpStatus: response.status,
     durationMs: Date.now() - startedAt,
     requestPayload: payload,
+    responsePayload: response.data,
+  });
+}
+
+export async function consultFiscalDocumentWithProvider(empresaId: number, document: any) {
+  const credential = await getProviderCredential(document.ambiente);
+  if (!credential) return null;
+
+  const provider = credential.provider.toLowerCase();
+  if (provider !== "focus_nfe" && provider !== "focus") {
+    throw new Error(`Provedor fiscal nao suportado: ${credential.provider}`);
+  }
+
+  const reference = buildReference(empresaId, document.modelo, Number(document.vendaId), Number(document.serie), Number(document.numero));
+  const resource = document.modelo === "NFE" ? "nfe" : "nfce";
+  const baseUrl = credential.baseUrl || focusBaseUrl(document.ambiente);
+  const endpoint = `${baseUrl.replace(/\/$/, "")}/v2/${resource}/${encodeURIComponent(reference)}`;
+  const startedAt = Date.now();
+  const response = await axios.get(endpoint, {
+    auth: { username: credential.token, password: "" },
+    timeout: 45_000,
+    validateStatus: () => true,
+  });
+
+  return mapFocusResponse({
+    reference,
+    endpoint,
+    httpStatus: response.status,
+    durationMs: Date.now() - startedAt,
+    requestPayload: { reference },
     responsePayload: response.data,
   });
 }
@@ -167,24 +238,23 @@ async function emitWithFocusNfe(
   }
 }
 
-async function getProviderCredential(empresaId: number, ambiente: "HOMOLOGACAO" | "PRODUCAO"): Promise<ProviderCredential | null> {
+async function getProviderCredential(ambiente: "HOMOLOGACAO" | "PRODUCAO"): Promise<ProviderCredential | null> {
   const db = await getDb();
   if (!db) return getEnvProviderCredential(ambiente);
 
   const [credential] = await db
     .select()
-    .from(fiscalProvedorCredenciais)
+    .from(fiscalProvedorGlobalCredenciais)
     .where(and(
-      eq(fiscalProvedorCredenciais.empresaId, empresaId),
-      eq(fiscalProvedorCredenciais.ambiente, ambiente),
-      eq(fiscalProvedorCredenciais.ativo, true),
+      eq(fiscalProvedorGlobalCredenciais.ambiente, ambiente),
+      eq(fiscalProvedorGlobalCredenciais.ativo, true),
     ))
     .limit(1);
 
   if (credential) {
     return {
       provider: credential.provedor === "FOCUS_NFE" ? "focus_nfe" : credential.provedor.toLowerCase(),
-      token: decodeSecret(credential.tokenCriptografado),
+      token: decryptSecret(credential.tokenCriptografado, { legacyBase64: true }) || "",
       baseUrl: credential.baseUrl,
       companyId: credential.companyId,
     };
@@ -392,14 +462,6 @@ function mapRegimeTributario(value: string) {
 
 function focusBaseUrl(ambiente: "HOMOLOGACAO" | "PRODUCAO") {
   return ambiente === "PRODUCAO" ? "https://api.focusnfe.com.br" : "https://homologacao.focusnfe.com.br";
-}
-
-function decodeSecret(value: string) {
-  try {
-    return Buffer.from(value, "base64").toString("utf8");
-  } catch {
-    return value;
-  }
 }
 
 function centsToDecimal(value: number) {

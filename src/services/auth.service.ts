@@ -18,8 +18,9 @@
 
 import { SignJWT, jwtVerify } from "jose";
 import { eq, and, sql } from "drizzle-orm";
+import { createHash, randomBytes } from "crypto";
 import type { User } from "../../drizzle/schema";
-import { users, empresas } from "../../drizzle/schema";
+import { users, empresas, loginHistorico, refreshTokens } from "../../drizzle/schema";
 import { getDb } from "../libs/db";
 import { ENV } from "../libs/env";
 import { hashPassword, verifyPassword } from "../libs/password";
@@ -35,6 +36,7 @@ export type TokenPayload = {
   name: string | null;
   role: string;
   empresaId: number | null; // null = trakto_admin do SaaS
+  scope?: string | null;
 };
 
 /**
@@ -58,8 +60,8 @@ function getTokenSecret() {
   }
 
   const isDefaultSecret = secret.includes("change-in-production") || secret === "your-secret-key-change-in-production";
-  if (ENV.isProduction && (isDefaultSecret || secret.length < 32)) {
-    throw new Error("JWT_SECRET must be strong and unique in production");
+  if (ENV.isProduction && (isDefaultSecret || secret.length < 64)) {
+    throw new Error("JWT_SECRET must be strong, unique and at least 64 characters long in production");
   }
 
   if (!ENV.isProduction && secret.length < 32) {
@@ -96,6 +98,28 @@ export async function createToken(user: User): Promise<string> {
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setIssuedAt()
     .setExpirationTime(expiresIn)
+    .sign(secretKey);
+}
+
+export async function createCheckoutCompanyToken(empresa: {
+  id: number;
+  nomeFantasia: string | null;
+  razaoSocial: string;
+}) {
+  const secretKey = getTokenSecret();
+
+  return new SignJWT({
+    userId: 0,
+    openId: `checkout_empresa_${empresa.id}`,
+    email: null,
+    name: empresa.nomeFantasia || empresa.razaoSocial,
+    role: "checkout_company",
+    empresaId: empresa.id,
+    scope: "checkout",
+  })
+    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+    .setIssuedAt()
+    .setExpirationTime("2h")
     .sign(secretKey);
 }
 
@@ -148,6 +172,7 @@ export async function verifyToken(token: string | null | undefined): Promise<Tok
       name: payload.name as string | null,
       role: payload.role as string,
       empresaId: (payload.empresaId as number | null) ?? null,
+      scope: (payload.scope as string | null) ?? null,
     };
   } catch (error) {
     console.warn("[Auth] Token verification failed:", String(error));
@@ -246,7 +271,8 @@ export async function validateCompany(cnpj: string, senhaAcesso: string) {
     throw new Error("Senha de acesso da empresa incorreta");
   }
 
-  return empresa;
+  const { senhaAtivacao: _senhaAtivacao, ...safeEmpresa } = empresa;
+  return safeEmpresa;
 }
 
 /**
@@ -278,8 +304,10 @@ export async function login(identifier: string, password: string, codigoEmpresa?
 
   // Super admin não precisa de empresa
   if (user.role === "trakto_admin") {
+    await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, user.id));
     const token = await createToken(user);
-    return { user, token };
+    const refreshToken = await issueRefreshToken(user.id);
+    return { user, token, refreshToken };
   }
 
   // Usuários normais precisam informar o código da empresa
@@ -313,8 +341,82 @@ export async function login(identifier: string, password: string, codigoEmpresa?
     throw new Error("Usuário não pertence a esta empresa");
   }
 
+  await db.update(users).set({ lastSignedIn: new Date() }).where(eq(users.id, user.id));
   const token = await createToken(user);
-  return { user, empresa, token };
+  const refreshToken = await issueRefreshToken(user.id);
+  return { user, empresa, token, refreshToken };
+}
+
+export async function refreshSession(rawRefreshToken: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const tokenHash = hashRefreshToken(rawRefreshToken);
+  const [stored] = await db.select().from(refreshTokens).where(eq(refreshTokens.tokenHash, tokenHash)).limit(1);
+  if (!stored || stored.revogadoEm || new Date(stored.expiraEm).getTime() <= Date.now()) {
+    throw new Error("Refresh token invalido ou expirado");
+  }
+
+  const [user] = await db.select().from(users).where(eq(users.id, stored.usuarioId)).limit(1);
+  if (!user) throw new Error("Usuario do refresh token nao encontrado");
+
+  await db.update(refreshTokens).set({ revogadoEm: new Date() }).where(eq(refreshTokens.id, stored.id));
+  return {
+    user,
+    token: await createToken(user),
+    refreshToken: await issueRefreshToken(user.id),
+  };
+}
+
+export async function revokeRefreshToken(rawRefreshToken: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(refreshTokens)
+    .set({ revogadoEm: new Date() })
+    .where(eq(refreshTokens.tokenHash, hashRefreshToken(rawRefreshToken)));
+}
+
+async function issueRefreshToken(usuarioId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rawToken = randomBytes(48).toString("base64url");
+  const expiraEm = new Date(Date.now() + ENV.refreshTokenDays * 24 * 60 * 60 * 1000);
+  await db.insert(refreshTokens).values({
+    usuarioId,
+    tokenHash: hashRefreshToken(rawToken),
+    expiraEm,
+  });
+  return rawToken;
+}
+
+function hashRefreshToken(value: string) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+export async function recordLoginAttempt(input: {
+  usuarioId?: number | null;
+  identificador: string;
+  codigoEmpresa?: string | null;
+  sucesso: boolean;
+  ip?: string | null;
+  userAgent?: string | null;
+  motivo?: string | null;
+}) {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    await db.insert(loginHistorico).values({
+      usuarioId: input.usuarioId || null,
+      identificador: input.identificador.slice(0, 320),
+      codigoEmpresa: input.codigoEmpresa?.slice(0, 120) || null,
+      sucesso: input.sucesso,
+      ip: input.ip?.slice(0, 80) || null,
+      userAgent: input.userAgent?.slice(0, 500) || null,
+      motivo: input.motivo?.slice(0, 255) || null,
+    });
+  } catch (error) {
+    console.warn("[Auth] Nao foi possivel registrar historico de login:", String(error));
+  }
 }
 
 /**
@@ -352,10 +454,12 @@ export async function register(email: string, name: string, password: string) {
 
   const user = newUserResult[0];
   const token = await createToken(user);
+  const refreshToken = await issueRefreshToken(user.id);
 
   return {
     user,
     token,
+    refreshToken,
   };
 }
 

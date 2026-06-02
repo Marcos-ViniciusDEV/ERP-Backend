@@ -9,7 +9,7 @@ import {
   documentosFiscais,
   empresas,
   fiscalEventos,
-  fiscalProvedorCredenciais,
+  fiscalAuditoria,
   fiscalTransmissoes,
   itensVenda,
   produtos,
@@ -19,23 +19,29 @@ import {
 } from "../../drizzle/schema";
 import { getDb } from "../libs/db";
 import { ENV } from "../libs/env";
+import { inspectCertificateA1 } from "../libs/certificate-a1";
+import { decryptSecret, encryptSecret } from "../libs/secret-crypto";
 import {
   cancelFiscalDocumentWithProvider,
+  consultFiscalDocumentWithProvider,
   downloadFiscalProviderFile,
   emitFiscalDocumentWithProvider,
   hasFiscalProviderForCompany,
+  listGlobalFiscalProviderCredentials,
   type FiscalProviderResult,
 } from "./fiscal-provider.service";
 import type {
   CertificadoDigitalInput,
+  FiscalCartaCorrecaoInput,
   EmpresaFiscalInput,
   FiscalConfigInput,
-  FiscalProviderCredentialInput,
+  FiscalInutilizacaoInput,
   FiscalPreflightInput,
   FiscalPrepareInput,
   SatMfeCupomInput,
   SatMfeEquipamentoInput,
 } from "../zod/fiscal.schema";
+import { validateProdutoFiscal, type RegimeTributario } from "./produto-fiscal.service";
 
 type FiscalIssueSeverity = "error" | "warning";
 
@@ -70,13 +76,26 @@ export async function getConfig(empresaId: number) {
   return created;
 }
 
-export async function updateConfig(empresaId: number, input: FiscalConfigInput) {
+export async function updateConfig(empresaId: number, input: FiscalConfigInput, usuarioId?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
   const current = await getConfig(empresaId);
+  const criticalChanges = [
+    current.ambiente !== input.ambiente && input.ambiente === "PRODUCAO" ? "ATIVAR_PRODUCAO" : null,
+    current.serieNfce !== input.serieNfce ? "ALTERAR_SERIE_NFCE" : null,
+    current.proximoNumeroNfce !== input.proximoNumeroNfce ? "ALTERAR_NUMERACAO_NFCE" : null,
+    current.serieNfe !== input.serieNfe ? "ALTERAR_SERIE_NFE" : null,
+    current.proximoNumeroNfe !== input.proximoNumeroNfe ? "ALTERAR_NUMERACAO_NFE" : null,
+  ].filter(Boolean);
+  if (criticalChanges.length > 0 && !input.confirmarAlteracaoCritica) {
+    throw new Error(`Confirme a alteracao fiscal critica: ${criticalChanges.join(", ")}`);
+  }
+
+  const { certificadoDigitalSenha, confirmarAlteracaoCritica: _confirmarAlteracaoCritica, ...configInput } = input;
   const payload = {
-    ...input,
+    ...configInput,
+    ...(certificadoDigitalSenha ? { certificadoDigitalSenha: encryptSecret(certificadoDigitalSenha) } : {}),
     certificadoValidade: input.certificadoValidade ? new Date(input.certificadoValidade) : null,
   };
 
@@ -85,6 +104,19 @@ export async function updateConfig(empresaId: number, input: FiscalConfigInput) 
     .set(payload)
     .where(and(eq(configuracoesFiscais.id, current.id), eq(configuracoesFiscais.empresaId, empresaId)));
 
+  await recordFiscalAudit(empresaId, usuarioId, "ATUALIZAR_CONFIGURACAO", "CONFIGURACAO_FISCAL", String(current.id), {
+    ambienteAnterior: current.ambiente,
+    ambienteNovo: input.ambiente,
+    serieNfceAnterior: current.serieNfce,
+    serieNfceNova: input.serieNfce,
+    proximoNumeroNfceAnterior: current.proximoNumeroNfce,
+    proximoNumeroNfceNovo: input.proximoNumeroNfce,
+    serieNfeAnterior: current.serieNfe,
+    serieNfeNova: input.serieNfe,
+    proximoNumeroNfeAnterior: current.proximoNumeroNfe,
+    proximoNumeroNfeNovo: input.proximoNumeroNfe,
+    alteracoesCriticas: criticalChanges,
+  });
   return getConfig(empresaId);
 }
 
@@ -96,7 +128,7 @@ export async function getEmpresaFiscal(empresaId: number) {
   return empresa;
 }
 
-export async function updateEmpresaFiscal(empresaId: number, input: EmpresaFiscalInput) {
+export async function updateEmpresaFiscal(empresaId: number, input: EmpresaFiscalInput, usuarioId?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db
@@ -121,64 +153,12 @@ export async function updateEmpresaFiscal(empresaId: number, input: EmpresaFisca
       cep: input.cep || null,
     })
     .where(eq(empresas.id, empresaId));
-  return getEmpresaFiscal(empresaId);
-}
-
-export async function listProviderCredentials(empresaId: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  return db
-    .select({
-      id: fiscalProvedorCredenciais.id,
-      provedor: fiscalProvedorCredenciais.provedor,
-      ambiente: fiscalProvedorCredenciais.ambiente,
-      baseUrl: fiscalProvedorCredenciais.baseUrl,
-      companyId: fiscalProvedorCredenciais.companyId,
-      ativo: fiscalProvedorCredenciais.ativo,
-      createdAt: fiscalProvedorCredenciais.createdAt,
-      updatedAt: fiscalProvedorCredenciais.updatedAt,
-    })
-    .from(fiscalProvedorCredenciais)
-    .where(eq(fiscalProvedorCredenciais.empresaId, empresaId))
-    .orderBy(desc(fiscalProvedorCredenciais.createdAt));
-}
-
-export async function upsertProviderCredential(empresaId: number, input: FiscalProviderCredentialInput) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  const [existing] = await db
-    .select()
-    .from(fiscalProvedorCredenciais)
-    .where(and(
-      eq(fiscalProvedorCredenciais.empresaId, empresaId),
-      eq(fiscalProvedorCredenciais.provedor, input.provedor),
-      eq(fiscalProvedorCredenciais.ambiente, input.ambiente),
-    ))
-    .limit(1);
-
-  const payload = {
-    tokenCriptografado: encodeSecret(input.token),
-    baseUrl: input.baseUrl || null,
-    companyId: input.companyId || null,
-    ativo: input.ativo,
-  };
-
-  if (existing) {
-    await db
-      .update(fiscalProvedorCredenciais)
-      .set(payload)
-      .where(and(eq(fiscalProvedorCredenciais.id, existing.id), eq(fiscalProvedorCredenciais.empresaId, empresaId)));
-    return { success: true, id: existing.id };
-  }
-
-  const [result] = await db.insert(fiscalProvedorCredenciais).values({
-    empresaId,
-    provedor: input.provedor,
-    ambiente: input.ambiente,
-    ...payload,
+  await recordFiscalAudit(empresaId, usuarioId, "ATUALIZAR_EMITENTE", "EMPRESA", String(empresaId), {
+    cnpj: input.cnpj,
+    razaoSocial: input.razaoSocial,
+    uf: input.uf || null,
   });
-  return { success: true, id: result.insertId };
+  return getEmpresaFiscal(empresaId);
 }
 
 export async function listDocuments(empresaId: number) {
@@ -207,6 +187,103 @@ export async function listDocuments(empresaId: number) {
     .leftJoin(vendas, eq(documentosFiscais.vendaId, vendas.id))
     .where(eq(documentosFiscais.empresaId, empresaId))
     .orderBy(desc(documentosFiscais.createdAt));
+}
+
+type FiscalMonitoringDocument = {
+  id: number;
+  modelo: string;
+  status: string;
+  numero: number | null;
+  serie: number | null;
+  createdAt: Date | string;
+  updatedAt?: Date | string | null;
+  emitidaEm?: Date | string | null;
+  motivoStatus?: string | null;
+};
+
+export function classifyFiscalMonitoringDocument(document: FiscalMonitoringDocument, now = new Date()) {
+  const referenceDate = new Date(document.emitidaEm || document.updatedAt || document.createdAt);
+  const ageMinutes = Math.max(0, Math.floor((now.getTime() - referenceDate.getTime()) / 60000));
+  const pendingStatuses = ["RASCUNHO", "PENDENTE", "PRONTO_PARA_ENVIO", "PRONTA_PARA_EMISSAO", "ASSINADO", "ENVIADO"];
+  const rejectedStatuses = ["VALIDACAO_FALHOU", "REJEITADA", "REJEITADO", "DENEGADO"];
+  const legalLimitMinutes = ENV.fiscalContingencyLegalHours * 60;
+
+  if (document.status === "CONTINGENCIA") {
+    const remainingMinutes = Math.max(0, legalLimitMinutes - ageMinutes);
+    return {
+      severity: remainingMinutes === 0 ? "critical" : remainingMinutes <= ENV.fiscalPendingCriticalMinutes ? "warning" : "info",
+      code: remainingMinutes === 0 ? "CONTINGENCIA_PRAZO_EXCEDIDO" : "CONTINGENCIA_PENDENTE",
+      message: remainingMinutes === 0
+        ? "Documento em contingencia ultrapassou a janela operacional configurada. Transmita imediatamente e confirme a regra aplicavel na UF."
+        : `Documento em contingencia aguardando transmissao. Restam aproximadamente ${remainingMinutes} minuto(s) da janela operacional configurada.`,
+      ageMinutes,
+      remainingMinutes,
+    };
+  }
+
+  if (rejectedStatuses.includes(document.status)) {
+    return {
+      severity: "critical",
+      code: "DOCUMENTO_REJEITADO",
+      message: document.motivoStatus || "Documento fiscal rejeitado ou com validacao falha. Corrija os dados e reenvie.",
+      ageMinutes,
+      remainingMinutes: null,
+    };
+  }
+
+  if (pendingStatuses.includes(document.status) && ageMinutes >= ENV.fiscalPendingWarningMinutes) {
+    return {
+      severity: ageMinutes >= ENV.fiscalPendingCriticalMinutes ? "critical" : "warning",
+      code: "TRANSMISSAO_PENDENTE",
+      message: `Documento aguardando autorizacao ou reenvio ha ${ageMinutes} minuto(s).`,
+      ageMinutes,
+      remainingMinutes: null,
+    };
+  }
+
+  return null;
+}
+
+export async function getFiscalMonitoring(empresaId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const documents = await db
+    .select({
+      id: documentosFiscais.id,
+      modelo: documentosFiscais.modelo,
+      status: documentosFiscais.status,
+      numero: documentosFiscais.numero,
+      serie: documentosFiscais.serie,
+      motivoStatus: documentosFiscais.motivoStatus,
+      emitidaEm: documentosFiscais.emitidaEm,
+      createdAt: documentosFiscais.createdAt,
+      updatedAt: documentosFiscais.updatedAt,
+    })
+    .from(documentosFiscais)
+    .where(eq(documentosFiscais.empresaId, empresaId))
+    .orderBy(desc(documentosFiscais.updatedAt));
+
+  const alerts = documents.flatMap((document) => {
+    const alert = classifyFiscalMonitoringDocument(document);
+    return alert ? [{ ...document, ...alert }] : [];
+  });
+
+  return {
+    generatedAt: new Date().toISOString(),
+    limits: {
+      pendingWarningMinutes: ENV.fiscalPendingWarningMinutes,
+      pendingCriticalMinutes: ENV.fiscalPendingCriticalMinutes,
+      contingencyLegalHours: ENV.fiscalContingencyLegalHours,
+    },
+    summary: {
+      totalAlerts: alerts.length,
+      critical: alerts.filter((alert) => alert.severity === "critical").length,
+      warning: alerts.filter((alert) => alert.severity === "warning").length,
+      contingency: alerts.filter((alert) => alert.status === "CONTINGENCIA").length,
+    },
+    alerts,
+  };
 }
 
 export async function preflightSale(empresaId: number, input: FiscalPreflightInput) {
@@ -247,6 +324,15 @@ export async function preflightSale(empresaId: number, input: FiscalPreflightInp
 
   if (!config.certificadoDigitalCaminho) {
     issues.push({ severity: "warning", code: "CERTIFICADO_AUSENTE", message: "Certificado A1 ainda nao cadastrado. A transmissao para SEFAZ ficara bloqueada." });
+  }
+  const [certificadoAtivo] = await db
+    .select({ validade: certificadosDigitais.validade })
+    .from(certificadosDigitais)
+    .where(and(eq(certificadosDigitais.empresaId, empresaId), eq(certificadosDigitais.ativo, true)))
+    .limit(1);
+  const certificadoValidade = certificadoAtivo?.validade || config.certificadoValidade;
+  if (certificadoValidade && new Date(certificadoValidade).getTime() < Date.now()) {
+    issues.push({ severity: "error", code: "CERTIFICADO_VENCIDO", message: "Certificado A1 vencido. Atualize o certificado antes de emitir." });
   }
 
   if (input.modelo === "NFCE" && (!config.idTokenIsc || !config.csc)) {
@@ -292,7 +378,9 @@ export async function preflightSale(empresaId: number, input: FiscalPreflightInp
       produtoId: produtos.id,
       codigo: produtos.codigo,
       descricao: produtos.descricao,
+      unidade: produtos.unidade,
       ncm: produtos.ncm,
+      cest: produtos.cest,
       cfopPadraoVenda: produtos.cfopPadraoVenda,
       origem: produtos.origem,
       cstIcms: produtos.cstIcms,
@@ -309,24 +397,13 @@ export async function preflightSale(empresaId: number, input: FiscalPreflightInp
   }
 
   for (const item of saleItems) {
-    const label = `${item.codigo} - ${item.descricao}`;
-    if (!item.ncm || !/^\d{8}$/.test(item.ncm)) {
-      issues.push({ severity: "error", code: "NCM_INVALIDO", message: `Produto ${label} precisa de NCM com 8 digitos.`, path: `produto.${item.produtoId}.ncm` });
-    }
-    if (!item.cfopPadraoVenda || !/^\d{4}$/.test(item.cfopPadraoVenda)) {
-      issues.push({ severity: "error", code: "CFOP_INVALIDO", message: `Produto ${label} precisa de CFOP padrao de venda com 4 digitos.`, path: `produto.${item.produtoId}.cfopPadraoVenda` });
-    }
-    if (item.origem === null || item.origem === undefined || item.origem < 0 || item.origem > 8) {
-      issues.push({ severity: "error", code: "ORIGEM_INVALIDA", message: `Produto ${label} precisa de origem fiscal entre 0 e 8.`, path: `produto.${item.produtoId}.origem` });
-    }
-    if (!item.cstIcms && !item.csosnIcms) {
-      issues.push({ severity: "error", code: "ICMS_AUSENTE", message: `Produto ${label} precisa de CST ICMS ou CSOSN ICMS.`, path: `produto.${item.produtoId}.icms` });
-    }
-    if (!item.pisCst) {
-      issues.push({ severity: "warning", code: "PIS_AUSENTE", message: `Produto ${label} esta sem CST de PIS.`, path: `produto.${item.produtoId}.pisCst` });
-    }
-    if (!item.cofinsCst) {
-      issues.push({ severity: "warning", code: "COFINS_AUSENTE", message: `Produto ${label} esta sem CST de COFINS.`, path: `produto.${item.produtoId}.cofinsCst` });
+    for (const productIssue of validateProdutoFiscal(item, config.regimeTributario as RegimeTributario)) {
+      issues.push({
+        severity: "error",
+        code: productIssue.code,
+        message: productIssue.message,
+        path: `produto.${item.produtoId}.${productIssue.field}`,
+      });
     }
   }
 
@@ -381,7 +458,7 @@ export async function prepareFiscalDocument(empresaId: number, input: FiscalPrep
   };
 }
 
-export async function emitirNotaDaVenda(empresaId: number, input: FiscalPrepareInput) {
+export async function emitirNotaDaVenda(empresaId: number, input: FiscalPrepareInput, usuarioId?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -389,6 +466,10 @@ export async function emitirNotaDaVenda(empresaId: number, input: FiscalPrepareI
   const preflight = await preflightSale(empresaId, input);
   if (!preflight.ok) {
     const failed = await createFiscalDocument(empresaId, input, config, "VALIDACAO_FALHOU", preflight);
+    await recordFiscalAudit(empresaId, usuarioId, "EMITIR_DOCUMENTO_BLOQUEADO", "DOCUMENTO_FISCAL", String(failed.id), {
+      vendaId: input.vendaId,
+      modelo: input.modelo,
+    });
     return {
       document: failed,
       preflight,
@@ -434,6 +515,12 @@ export async function emitirNotaDaVenda(empresaId: number, input: FiscalPrepareI
           .where(and(eq(vendas.id, input.vendaId), eq(vendas.empresaId, empresaId)));
       }
 
+      await recordFiscalAudit(empresaId, usuarioId, "EMITIR_DOCUMENTO", "DOCUMENTO_FISCAL", String(document.id), {
+        vendaId: input.vendaId,
+        modelo: input.modelo,
+        provider: providerResult.provider,
+        status: providerResult.status,
+      });
       return {
         document,
         preflight,
@@ -455,6 +542,11 @@ export async function emitirNotaDaVenda(empresaId: number, input: FiscalPrepareI
       .where(and(eq(vendas.id, input.vendaId), eq(vendas.empresaId, empresaId)));
   }
 
+  await recordFiscalAudit(empresaId, usuarioId, "PREPARAR_DOCUMENTO", "DOCUMENTO_FISCAL", String(document.id), {
+    vendaId: input.vendaId,
+    modelo: input.modelo,
+    status,
+  });
   return {
     document,
     preflight,
@@ -565,7 +657,7 @@ async function createFiscalDocumentFromProvider(
   return document;
 }
 
-export async function cancelDocument(empresaId: number, documentId: number, justificativa: string) {
+export async function cancelDocument(empresaId: number, documentId: number, justificativa: string, usuarioId?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -597,6 +689,7 @@ export async function cancelDocument(empresaId: number, documentId: number, just
     motivoStatusSefaz: providerResult?.motivoStatusSefaz || null,
     protocolo: providerResult?.protocolo || null,
     xmlRetorno: providerResult ? JSON.stringify(providerResult.responsePayload) : null,
+    usuarioId,
   });
 
   if (providerResult) {
@@ -633,8 +726,269 @@ export async function cancelDocument(empresaId: number, documentId: number, just
     })
     .where(and(eq(documentosFiscais.id, documentId), eq(documentosFiscais.empresaId, empresaId)));
 
+  await recordFiscalAudit(empresaId, usuarioId, "CANCELAR_DOCUMENTO", "DOCUMENTO_FISCAL", String(documentId), {
+    justificativa,
+    status: eventoStatus,
+    protocolo: providerResult?.protocolo || null,
+  });
   const [updated] = await db.select().from(documentosFiscais).where(eq(documentosFiscais.id, documentId)).limit(1);
   return updated;
+}
+
+export async function consultDocumentStatus(empresaId: number, documentId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const [document] = await db
+    .select()
+    .from(documentosFiscais)
+    .where(and(eq(documentosFiscais.id, documentId), eq(documentosFiscais.empresaId, empresaId)))
+    .limit(1);
+
+  if (!document) throw new Error("Documento fiscal nao encontrado");
+  if (document.modelo !== "NFE" && document.modelo !== "NFCE") {
+    throw new Error("Consulta oficial pelo provedor esta disponivel apenas para NF-e e NFC-e");
+  }
+  if (!document.vendaId || !document.serie || !document.numero) {
+    throw new Error("Documento fiscal sem referencia completa para consulta no provedor");
+  }
+
+  const providerResult = await consultFiscalDocumentWithProvider(empresaId, document);
+  if (!providerResult) throw new Error("Credencial de provedor fiscal nao configurada para este ambiente");
+
+  const providerMessage = providerResult.motivoStatusSefaz || "Status consultado no provedor fiscal.";
+
+  await db.insert(fiscalTransmissoes).values({
+    empresaId,
+    documentoFiscalId: documentId,
+    tipoOperacao: "CONSULTA_STATUS",
+    ambiente: document.ambiente,
+    endpoint: providerResult.endpoint,
+    requestXml: JSON.stringify(providerResult.requestPayload),
+    responseXml: JSON.stringify(providerResult.responsePayload),
+    httpStatus: providerResult.httpStatus,
+    codigoStatusSefaz: providerResult.codigoStatusSefaz,
+    motivo: providerMessage,
+    duracaoMs: providerResult.durationMs,
+  });
+
+  await db.insert(fiscalEventos).values({
+    empresaId,
+    documentoFiscalId: documentId,
+    tipo: "CONSULTA_STATUS",
+    status: providerResult.httpStatus >= 400 ? "REJEITADO" : "AUTORIZADO",
+    codigoStatusSefaz: providerResult.codigoStatusSefaz,
+    motivoStatusSefaz: providerResult.motivoStatusSefaz,
+    protocolo: providerResult.protocolo,
+    xmlRetorno: JSON.stringify(providerResult.responsePayload),
+  });
+
+  await db
+    .update(documentosFiscais)
+    .set({
+      status: providerResult.status as any,
+      chaveAcesso: providerResult.chaveAcesso || document.chaveAcesso,
+      protocolo: providerResult.protocolo || document.protocolo,
+      protocoloAutorizacao: providerResult.status === "AUTORIZADA" ? providerResult.protocolo : document.protocoloAutorizacao,
+      codigoStatusSefaz: providerResult.codigoStatusSefaz,
+      motivoStatusSefaz: providerResult.motivoStatusSefaz,
+      motivoStatus: providerMessage,
+      xml: providerResult.xmlUrl || document.xml,
+      xmlAutorizado: providerResult.status === "AUTORIZADA" ? providerResult.xmlUrl : document.xmlAutorizado,
+      danfeUrl: providerResult.danfeUrl || document.danfeUrl,
+      qrcodeUrl: providerResult.qrcodeUrl || document.qrcodeUrl,
+      autorizadaEm: providerResult.status === "AUTORIZADA" ? (document.autorizadaEm || new Date()) : document.autorizadaEm,
+      canceladaEm: providerResult.status === "CANCELADA" ? (document.canceladaEm || new Date()) : document.canceladaEm,
+    })
+    .where(and(eq(documentosFiscais.id, documentId), eq(documentosFiscais.empresaId, empresaId)));
+
+  const [updated] = await db.select().from(documentosFiscais).where(eq(documentosFiscais.id, documentId)).limit(1);
+  return {
+    document: updated,
+    provider: providerResult.provider,
+    message: providerMessage,
+  };
+}
+
+type FiscalPollingDocument = {
+  id: number;
+  empresaId: number;
+  modelo: string;
+  status: string;
+};
+
+export async function processFiscalPollingBatch(
+  documents: FiscalPollingDocument[],
+  consult: (empresaId: number, documentId: number) => Promise<unknown> = consultDocumentStatus,
+) {
+  const results = [];
+  for (const document of documents) {
+    try {
+      await consult(document.empresaId, document.id);
+      results.push({ id: document.id, empresaId: document.empresaId, success: true });
+    } catch (error: any) {
+      results.push({
+        id: document.id,
+        empresaId: document.empresaId,
+        success: false,
+        error: error.message || "Falha ao consultar documento fiscal",
+      });
+    }
+  }
+  return results;
+}
+
+export async function pollPendingFiscalDocuments(empresaId?: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const conditions = [
+    sql`${documentosFiscais.status} in ('PENDENTE','PRONTO_PARA_ENVIO','ENVIADO','CONTINGENCIA')`,
+    sql`${documentosFiscais.modelo} in ('NFE','NFCE')`,
+    sql`${documentosFiscais.vendaId} is not null`,
+    sql`${documentosFiscais.serie} is not null`,
+    sql`${documentosFiscais.numero} is not null`,
+  ];
+  if (empresaId) conditions.push(eq(documentosFiscais.empresaId, empresaId));
+
+  const documents = await db
+    .select({
+      id: documentosFiscais.id,
+      empresaId: documentosFiscais.empresaId,
+      modelo: documentosFiscais.modelo,
+      status: documentosFiscais.status,
+    })
+    .from(documentosFiscais)
+    .where(and(...conditions))
+    .orderBy(desc(documentosFiscais.updatedAt))
+    .limit(Math.max(1, ENV.fiscalPollingBatchSize));
+
+  const results = await processFiscalPollingBatch(documents);
+  return {
+    processed: results.length,
+    success: results.filter((result) => result.success).length,
+    failed: results.filter((result) => !result.success).length,
+    results,
+  };
+}
+
+let fiscalPollingTimer: ReturnType<typeof setInterval> | null = null;
+
+export function startFiscalPolling() {
+  if (fiscalPollingTimer || ENV.fiscalPollingIntervalMs <= 0) return;
+  fiscalPollingTimer = setInterval(() => {
+    void pollPendingFiscalDocuments().catch((error) => {
+      console.warn("[Fiscal Polling] Falha ao processar pendencias:", String(error));
+    });
+  }, ENV.fiscalPollingIntervalMs);
+  fiscalPollingTimer.unref?.();
+}
+
+export async function reemitDocument(empresaId: number, documentId: number, usuarioId?: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [document] = await db
+    .select()
+    .from(documentosFiscais)
+    .where(and(eq(documentosFiscais.id, documentId), eq(documentosFiscais.empresaId, empresaId)))
+    .limit(1);
+
+  if (!document) throw new Error("Documento fiscal nao encontrado");
+  if (!document.vendaId) throw new Error("Documento fiscal nao esta vinculado a uma venda");
+  if (document.status === "AUTORIZADA" || document.status === "CANCELADA") {
+    throw new Error("Documento autorizado ou cancelado nao pode ser reenviado");
+  }
+
+  return emitirNotaDaVenda(empresaId, {
+    vendaId: document.vendaId,
+    modelo: document.modelo as any,
+    emitirEmContingencia: false,
+  }, usuarioId);
+}
+
+export async function createCartaCorrecao(empresaId: number, documentId: number, input: FiscalCartaCorrecaoInput, usuarioId?: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [document] = await db
+    .select()
+    .from(documentosFiscais)
+    .where(and(eq(documentosFiscais.id, documentId), eq(documentosFiscais.empresaId, empresaId)))
+    .limit(1);
+
+  if (!document) throw new Error("Documento fiscal nao encontrado");
+  if (document.status !== "AUTORIZADA") throw new Error("Carta de correcao exige documento autorizado");
+  if (document.modelo !== "NFE") throw new Error("Carta de correcao estruturada esta liberada apenas para NF-e modelo 55");
+
+  const eventos = await db
+    .select({ sequencia: fiscalEventos.sequencia })
+    .from(fiscalEventos)
+    .where(and(eq(fiscalEventos.empresaId, empresaId), eq(fiscalEventos.documentoFiscalId, documentId), eq(fiscalEventos.tipo, "CARTA_CORRECAO")))
+    .orderBy(desc(fiscalEventos.sequencia))
+    .limit(1);
+  const sequencia = (eventos[0]?.sequencia || 0) + 1;
+
+  const [result] = await db.insert(fiscalEventos).values({
+    empresaId,
+    documentoFiscalId: documentId,
+    tipo: "CARTA_CORRECAO",
+    status: "PENDENTE",
+    justificativa: input.correcao,
+    sequencia,
+    usuarioId,
+    xmlEvento: JSON.stringify({
+      tipo: "CARTA_CORRECAO",
+      correcao: input.correcao,
+      sequencia,
+      chaveAcesso: document.chaveAcesso,
+    }),
+  });
+
+  await recordFiscalAudit(empresaId, usuarioId, "REGISTRAR_CARTA_CORRECAO", "DOCUMENTO_FISCAL", String(documentId), {
+    sequencia,
+  });
+  return {
+    success: true,
+    id: result.insertId,
+    status: "PENDENTE",
+    message: "Carta de correcao registrada. O envio oficial pode ser acoplado ao provedor quando a conta Focus estiver habilitada para eventos.",
+  };
+}
+
+export async function createInutilizacao(empresaId: number, input: FiscalInutilizacaoInput, usuarioId?: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const config = await getConfig(empresaId);
+
+  const [result] = await db.insert(fiscalEventos).values({
+    empresaId,
+    documentoFiscalId: null,
+    tipo: "INUTILIZACAO",
+    status: "PENDENTE",
+    justificativa: input.justificativa,
+    usuarioId,
+    xmlEvento: JSON.stringify({
+      tipo: "INUTILIZACAO",
+      modelo: input.modelo,
+      ambiente: config.ambiente,
+      serie: input.serie,
+      numeroInicial: input.numeroInicial,
+      numeroFinal: input.numeroFinal,
+      justificativa: input.justificativa,
+    }),
+  });
+
+  await recordFiscalAudit(empresaId, usuarioId, "REGISTRAR_INUTILIZACAO", "NUMERACAO_FISCAL", null, {
+    modelo: input.modelo,
+    serie: input.serie,
+    numeroInicial: input.numeroInicial,
+    numeroFinal: input.numeroFinal,
+  });
+  return {
+    success: true,
+    id: result.insertId,
+    status: "PENDENTE",
+    message: "Inutilizacao registrada. O envio oficial deve ocorrer pelo provedor fiscal/SEFAZ antes de considerar a numeracao inutilizada.",
+  };
 }
 
 export async function getDocumentXml(empresaId: number, documentId: number) {
@@ -709,6 +1063,82 @@ export async function getFiscalSummary(empresaId: number, month: number, year: n
   return summary;
 }
 
+export function parseFiscalInutilizacaoPayload(xmlEvento?: string | null) {
+  if (!xmlEvento) return null;
+  try {
+    const payload = JSON.parse(xmlEvento);
+    return {
+      modelo: payload.modelo || null,
+      serie: payload.serie ?? null,
+      numeroInicial: payload.numeroInicial ?? null,
+      numeroFinal: payload.numeroFinal ?? null,
+      ambiente: payload.ambiente || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function getFiscalExceptionsReport(empresaId: number, startDate?: string, endDate?: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const now = new Date();
+  const start = startDate || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+  const end = endDate || now.toISOString().slice(0, 10);
+
+  const cancelled = await db
+    .select({
+      id: documentosFiscais.id,
+      modelo: documentosFiscais.modelo,
+      numero: documentosFiscais.numero,
+      serie: documentosFiscais.serie,
+      chaveAcesso: documentosFiscais.chaveAcesso,
+      protocoloCancelamento: documentosFiscais.protocoloCancelamento,
+      justificativa: documentosFiscais.justificativaCancelamento,
+      canceladaEm: documentosFiscais.canceladaEm,
+    })
+    .from(documentosFiscais)
+    .where(and(
+      eq(documentosFiscais.empresaId, empresaId),
+      eq(documentosFiscais.status, "CANCELADA"),
+      sql`${documentosFiscais.canceladaEm} >= ${`${start} 00:00:00`}`,
+      sql`${documentosFiscais.canceladaEm} <= ${`${end} 23:59:59`}`,
+    ))
+    .orderBy(desc(documentosFiscais.canceladaEm));
+
+  const inutilizacoes = await db
+    .select({
+      id: fiscalEventos.id,
+      status: fiscalEventos.status,
+      justificativa: fiscalEventos.justificativa,
+      protocolo: fiscalEventos.protocolo,
+      xmlEvento: fiscalEventos.xmlEvento,
+      createdAt: fiscalEventos.createdAt,
+    })
+    .from(fiscalEventos)
+    .where(and(
+      eq(fiscalEventos.empresaId, empresaId),
+      eq(fiscalEventos.tipo, "INUTILIZACAO"),
+      sql`${fiscalEventos.createdAt} >= ${`${start} 00:00:00`}`,
+      sql`${fiscalEventos.createdAt} <= ${`${end} 23:59:59`}`,
+    ))
+    .orderBy(desc(fiscalEventos.createdAt));
+
+  return {
+    periodo: { inicio: start, fim: end },
+    summary: {
+      cancelados: cancelled.length,
+      inutilizacoes: inutilizacoes.length,
+      inutilizacoesPendentes: inutilizacoes.filter((item) => item.status === "PENDENTE").length,
+    },
+    cancelados: cancelled,
+    inutilizacoes: inutilizacoes.map(({ xmlEvento, ...item }) => ({
+      ...item,
+      numeracao: parseFiscalInutilizacaoPayload(xmlEvento),
+    })),
+  };
+}
+
 export async function getFiscalReadiness(empresaId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -721,7 +1151,7 @@ export async function getFiscalReadiness(empresaId: number) {
     ? new Date(certificadoAtivo.validade).getTime() < Date.now()
     : !certificadoAtivo;
   const providerConfigured = await hasFiscalProviderForCompany(empresaId, config.ambiente);
-  const providerCredentials = await listProviderCredentials(empresaId);
+  const providerCredentials = await listGlobalFiscalProviderCredentials();
   const activeProvider = providerCredentials.find((credential) => credential.ativo && credential.ambiente === config.ambiente);
 
   const checks = [
@@ -754,8 +1184,8 @@ export async function getFiscalReadiness(empresaId: number) {
       ok: providerConfigured,
       label: "Provedor fiscal automatico configurado",
       detail: providerConfigured
-        ? `Provedor ${activeProvider?.provedor || ENV.fiscalProvider} configurado para transmissao.`
-        : "Cadastre as credenciais do provedor fiscal da empresa ou configure FISCAL_PROVIDER no backend.",
+        ? `Provedor central ${activeProvider?.provedor || ENV.fiscalProvider} configurado para transmissao.`
+        : "A administracao Trakto precisa configurar o provedor fiscal central para este ambiente.",
     },
     {
       code: "SAT_MFE",
@@ -799,6 +1229,36 @@ export async function listTransmissoes(empresaId: number, documentoFiscalId?: nu
   return db.select().from(fiscalTransmissoes).where(and(...conditions)).orderBy(desc(fiscalTransmissoes.createdAt));
 }
 
+export async function listAuditoria(empresaId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db
+    .select()
+    .from(fiscalAuditoria)
+    .where(eq(fiscalAuditoria.empresaId, empresaId))
+    .orderBy(desc(fiscalAuditoria.createdAt));
+}
+
+async function recordFiscalAudit(
+  empresaId: number,
+  usuarioId: number | undefined,
+  acao: string,
+  entidade: string,
+  entidadeId?: string | null,
+  detalhes?: Record<string, unknown>,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.insert(fiscalAuditoria).values({
+    empresaId,
+    usuarioId: usuarioId || null,
+    acao,
+    entidade,
+    entidadeId: entidadeId || null,
+    detalhesJson: detalhes ? JSON.stringify(detalhes) : null,
+  });
+}
+
 export async function listCertificados(empresaId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -819,9 +1279,19 @@ export async function listCertificados(empresaId: number) {
     .orderBy(desc(certificadosDigitais.createdAt));
 }
 
-export async function createCertificado(empresaId: number, input: CertificadoDigitalInput) {
+export async function createCertificado(empresaId: number, input: CertificadoDigitalInput, usuarioId?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  const certificateBuffer = loadCertificateBuffer(input.arquivoBase64, input.caminhoSeguro);
+  const certificateInfo = inspectCertificateA1(certificateBuffer, input.senha);
+  if (certificateInfo.validade.getTime() < Date.now()) {
+    throw new Error("Certificado A1 vencido");
+  }
+  const [empresa] = await db.select({ cnpj: empresas.cnpj }).from(empresas).where(eq(empresas.id, empresaId)).limit(1);
+  const empresaCnpj = onlyDigits(empresa?.cnpj);
+  if (certificateInfo.cnpj && certificateInfo.cnpj !== empresaCnpj) {
+    throw new Error("CNPJ do certificado A1 nao corresponde ao CNPJ da empresa");
+  }
   const caminhoSeguro = input.arquivoBase64
     ? saveCertificateFile(empresaId, input.nomeArquivo, input.arquivoBase64)
     : input.caminhoSeguro;
@@ -832,17 +1302,34 @@ export async function createCertificado(empresaId: number, input: CertificadoDig
     tipo: "A1",
     nomeArquivo: input.nomeArquivo,
     caminhoSeguro,
-    senhaCriptografada: input.senha ? Buffer.from(input.senha).toString("base64") : null,
-    validade: input.validade ? new Date(input.validade) : null,
-    cnpj: input.cnpj,
-    razaoSocial: input.razaoSocial,
+    senhaCriptografada: encryptSecret(input.senha),
+    validade: certificateInfo.validade,
+    cnpj: certificateInfo.cnpj || input.cnpj,
+    razaoSocial: certificateInfo.razaoSocial || input.razaoSocial,
     ativo: input.ativo,
   });
 
+  if (input.ativo) {
+    const config = await getConfig(empresaId);
+    await db
+      .update(configuracoesFiscais)
+      .set({
+        certificadoDigitalCaminho: caminhoSeguro,
+        certificadoDigitalSenha: encryptSecret(input.senha),
+        certificadoValidade: certificateInfo.validade,
+      })
+      .where(and(eq(configuracoesFiscais.id, config.id), eq(configuracoesFiscais.empresaId, empresaId)));
+  }
+
+  await recordFiscalAudit(empresaId, usuarioId, "CRIAR_CERTIFICADO", "CERTIFICADO_A1", String(result.insertId), {
+    nomeArquivo: input.nomeArquivo,
+    cnpj: certificateInfo.cnpj || input.cnpj || null,
+    validade: certificateInfo.validade.toISOString(),
+  });
   return { success: true, id: result.insertId };
 }
 
-export async function testCertificado(empresaId: number, id: number) {
+export async function testCertificado(empresaId: number, id: number, usuarioId?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const [certificado] = await db
@@ -852,28 +1339,62 @@ export async function testCertificado(empresaId: number, id: number) {
     .limit(1);
   if (!certificado) throw new Error("Certificado nao encontrado");
 
-  const validade = certificado.validade ? new Date(certificado.validade) : null;
+  const [empresa] = await db.select({ cnpj: empresas.cnpj }).from(empresas).where(eq(empresas.id, empresaId)).limit(1);
+  const issues: string[] = [];
+  let certificateInfo = null;
+  try {
+    const buffer = fs.readFileSync(certificado.caminhoSeguro);
+    certificateInfo = inspectCertificateA1(buffer, decryptSecret(certificado.senhaCriptografada, { legacyBase64: true }));
+  } catch (error: any) {
+    issues.push(error.message);
+  }
+  const validade = certificateInfo?.validade || (certificado.validade ? new Date(certificado.validade) : null);
   const vencido = validade ? validade.getTime() < Date.now() : true;
+  const certificadoCnpj = certificateInfo?.cnpj || certificado.cnpj;
+  const cnpjDivergente = Boolean(certificadoCnpj && onlyDigits(certificadoCnpj) !== onlyDigits(empresa?.cnpj));
+  if (!certificado.caminhoSeguro) issues.push("Certificado sem caminho seguro cadastrado");
+  if (vencido) issues.push("Certificado vencido ou sem validade informada");
+  if (cnpjDivergente) issues.push("CNPJ do certificado nao corresponde ao CNPJ da empresa");
+  await recordFiscalAudit(empresaId, usuarioId, "TESTAR_CERTIFICADO", "CERTIFICADO_A1", String(id), {
+    ok: issues.length === 0,
+    issues,
+  });
   return {
-    ok: !vencido && Boolean(certificado.caminhoSeguro),
+    ok: issues.length === 0,
     certificado: {
       id: certificado.id,
       nomeArquivo: certificado.nomeArquivo,
       validade: certificado.validade,
-      cnpj: certificado.cnpj,
+      cnpj: certificadoCnpj,
       ativo: certificado.ativo,
     },
-    issues: [
-      ...(!certificado.caminhoSeguro ? ["Certificado sem caminho seguro cadastrado"] : []),
-      ...(vencido ? ["Certificado vencido ou sem validade informada"] : []),
-    ],
+    issues,
   };
 }
 
-export async function deactivateCertificado(empresaId: number, id: number) {
+export async function deactivateCertificado(empresaId: number, id: number, usuarioId?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  const [certificado] = await db
+    .select({ caminhoSeguro: certificadosDigitais.caminhoSeguro })
+    .from(certificadosDigitais)
+    .where(and(eq(certificadosDigitais.id, id), eq(certificadosDigitais.empresaId, empresaId)))
+    .limit(1);
   await db.update(certificadosDigitais).set({ ativo: false }).where(and(eq(certificadosDigitais.id, id), eq(certificadosDigitais.empresaId, empresaId)));
+  if (certificado) {
+    await db
+      .update(configuracoesFiscais)
+      .set({
+        certificadoDigitalCaminho: null,
+        certificadoDigitalSenha: null,
+        certificadoValidade: null,
+      })
+      .where(and(
+        eq(configuracoesFiscais.empresaId, empresaId),
+        eq(configuracoesFiscais.certificadoDigitalCaminho, certificado.caminhoSeguro),
+      ));
+  }
+  await recordFiscalAudit(empresaId, usuarioId, "DESATIVAR_CERTIFICADO", "CERTIFICADO_A1", String(id));
   return { success: true };
 }
 
@@ -883,7 +1404,7 @@ export async function listSatMfeEquipamentos(empresaId: number) {
   return db.select().from(satMfeEquipamentos).where(eq(satMfeEquipamentos.empresaId, empresaId)).orderBy(desc(satMfeEquipamentos.createdAt));
 }
 
-export async function createSatMfeEquipamento(empresaId: number, input: SatMfeEquipamentoInput) {
+export async function createSatMfeEquipamento(empresaId: number, input: SatMfeEquipamentoInput, usuarioId?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const [result] = await db.insert(satMfeEquipamentos).values({
@@ -893,10 +1414,15 @@ export async function createSatMfeEquipamento(empresaId: number, input: SatMfeEq
     fabricante: input.fabricante,
     modelo: input.modelo,
     numeroSerie: input.numeroSerie,
-    codigoAtivacaoCriptografado: input.codigoAtivacao ? Buffer.from(input.codigoAtivacao).toString("base64") : null,
+    codigoAtivacaoCriptografado: encryptSecret(input.codigoAtivacao),
     assinaturaAplicativoComercial: input.assinaturaAplicativoComercial,
     cnpjSoftwareHouse: input.cnpjSoftwareHouse,
     status: input.status,
+  });
+  await recordFiscalAudit(empresaId, usuarioId, "CRIAR_EQUIPAMENTO_SAT_MFE", "EQUIPAMENTO_SAT_MFE", String(result.insertId), {
+    pdvId: input.pdvId,
+    tipo: input.tipo,
+    numeroSerie: input.numeroSerie || null,
   });
   return { success: true, id: result.insertId };
 }
@@ -922,7 +1448,7 @@ export async function testSatMfeEquipamento(empresaId: number, id: number) {
   };
 }
 
-export async function createSatMfeCupom(empresaId: number, input: SatMfeCupomInput) {
+export async function createSatMfeCupom(empresaId: number, input: SatMfeCupomInput, usuarioId?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const [equipamento] = await db
@@ -941,6 +1467,11 @@ export async function createSatMfeCupom(empresaId: number, input: SatMfeCupomInp
     mensagemRetorno: "Cupom aguardando emissao pelo agent local do PDV.",
   });
 
+  await recordFiscalAudit(empresaId, usuarioId, "CRIAR_CUPOM_SAT_MFE", "CUPOM_SAT_MFE", String(result.insertId), {
+    vendaId: input.vendaId,
+    equipamentoId: input.equipamentoId,
+    modelo: input.modelo,
+  });
   return { success: true, id: result.insertId, status: "PENDENTE_EQUIPAMENTO" };
 }
 
@@ -1052,13 +1583,8 @@ function isProviderFilePath(value: string) {
   return value.startsWith("/") || value.startsWith("http://") || value.startsWith("https://");
 }
 
-function encodeSecret(value: string) {
-  return Buffer.from(value, "utf8").toString("base64");
-}
-
 function saveCertificateFile(empresaId: number, originalName: string, fileBase64: string) {
-  const raw = fileBase64.includes(",") ? fileBase64.split(",").pop() || "" : fileBase64;
-  const buffer = Buffer.from(raw, "base64");
+  const buffer = decodeCertificateBase64(fileBase64);
   const extension = path.extname(originalName).toLowerCase() || ".pfx";
   if (![".pfx", ".p12"].includes(extension)) {
     throw new Error("Certificado A1 deve ser um arquivo .pfx ou .p12");
@@ -1069,4 +1595,19 @@ function saveCertificateFile(empresaId: number, originalName: string, fileBase64
   const filepath = path.join(uploadDir, filename);
   fs.writeFileSync(filepath, buffer, { mode: 0o600 });
   return filepath;
+}
+
+function loadCertificateBuffer(fileBase64?: string | null, securePath?: string | null) {
+  if (fileBase64) return decodeCertificateBase64(fileBase64);
+  if (securePath && fs.existsSync(securePath)) return fs.readFileSync(securePath);
+  throw new Error("Envie o arquivo A1 .pfx/.p12 para validacao");
+}
+
+function decodeCertificateBase64(fileBase64: string) {
+  const raw = fileBase64.includes(",") ? fileBase64.split(",").pop() || "" : fileBase64;
+  return Buffer.from(raw, "base64");
+}
+
+function onlyDigits(value?: string | null) {
+  return String(value || "").replace(/\D/g, "");
 }

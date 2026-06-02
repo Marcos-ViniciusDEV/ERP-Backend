@@ -27,8 +27,21 @@ export const ENV = {
   /** Chave secreta para cookies de sessão - ALTERAR EM PRODUÇÃO! */
   cookieSecret: process.env.COOKIE_SECRET ?? process.env.JWT_SECRET ?? "your-cookie-secret-change-in-production",
 
+  /** Chave dedicada para criptografar segredos persistidos - ALTERAR EM PRODUCAO! */
+  secretsEncryptionKey: process.env.SECRETS_ENCRYPTION_KEY ?? process.env.JWT_SECRET ?? "your-secret-key-change-in-production",
+
   /** Tempo de expiração do token JWT (ex: "7d", "24h", "60m") */
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "4h",
+
+  /** Duracao do refresh token rotativo em dias */
+  refreshTokenDays: Number(process.env.REFRESH_TOKEN_DAYS ?? 7),
+
+  /** Limites operacionais para alertas fiscais locais */
+  fiscalPendingWarningMinutes: Number(process.env.FISCAL_PENDING_WARNING_MINUTES ?? 15),
+  fiscalPendingCriticalMinutes: Number(process.env.FISCAL_PENDING_CRITICAL_MINUTES ?? 60),
+  fiscalContingencyLegalHours: Number(process.env.FISCAL_CONTINGENCY_LEGAL_HOURS ?? 24),
+  fiscalPollingIntervalMs: Number(process.env.FISCAL_POLLING_INTERVAL_MS ?? 60_000),
+  fiscalPollingBatchSize: Number(process.env.FISCAL_POLLING_BATCH_SIZE ?? 20),
 
   /** Origens HTTP permitidas para CORS, separadas por virgula */
   corsOrigins: (
@@ -71,4 +84,16 @@ export const ENV = {
 
   /** URL customizada opcional do provedor fiscal */
   fiscalProviderBaseUrl: process.env.FISCAL_PROVIDER_BASE_URL ?? "",
+
+  /** Credencial global usada somente no checkout comercial da assinatura SaaS */
+  mercadoPagoAccessToken: process.env.MERCADO_PAGO_ACCESS_TOKEN ?? "",
+
+  /** Chave publica exposta ao Payment Brick no navegador */
+  mercadoPagoPublicKey: process.env.MERCADO_PAGO_PUBLIC_KEY ?? "",
+
+  /** Assinatura secreta configurada no painel Mercado Pago para validar Webhooks */
+  mercadoPagoWebhookSecret: process.env.MERCADO_PAGO_WEBHOOK_SECRET ?? "",
+
+  /** URL publica do webhook, por exemplo https://erp.exemplo.com/api/checkout/webhooks/mercado-pago */
+  mercadoPagoWebhookUrl: process.env.MERCADO_PAGO_WEBHOOK_URL ?? "",
 };

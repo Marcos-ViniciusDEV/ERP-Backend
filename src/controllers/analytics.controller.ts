@@ -5,7 +5,7 @@ import { z } from "zod";
 export async function getABC(req: Request, res: Response) {
   try {
     const { startDate, endDate } = req.query;
-    const empresaId = req.user?.empresaId || 1;
+    const empresaId = req.empresaId!;
     const result = await analyticsService.calculateABC(
       empresaId,
       startDate as string,
@@ -33,7 +33,7 @@ const upsertExpenseGoalSchema = z.object({
 export async function upsertGoal(req: Request, res: Response) {
   try {
     const input = upsertGoalSchema.parse(req.body);
-    const empresaId = req.user?.empresaId || 1;
+    const empresaId = req.empresaId!;
     const result = await analyticsService.upsertSalesGoal(
       empresaId,
       input.month,
@@ -52,7 +52,7 @@ export async function getGoalsPerformance(req: Request, res: Response) {
     const month = Number(req.query.month) || new Date().getMonth() + 1;
     const year = Number(req.query.year) || new Date().getFullYear();
 
-    const empresaId = req.user?.empresaId || 1;
+    const empresaId = req.empresaId!;
     const result = await analyticsService.getSalesPerformance(empresaId, month, year);
     res.json({ success: true, data: result });
   } catch (error: any) {
@@ -63,7 +63,7 @@ export async function getGoalsPerformance(req: Request, res: Response) {
 export async function upsertExpenseGoal(req: Request, res: Response) {
   try {
     const input = upsertExpenseGoalSchema.parse(req.body);
-    const empresaId = req.user?.empresaId || 1;
+    const empresaId = req.empresaId!;
     const result = await analyticsService.upsertExpenseGoal(
       empresaId,
       input.month,
@@ -81,7 +81,7 @@ export async function getExpenseGoalsPerformance(req: Request, res: Response) {
     const month = Number(req.query.month) || new Date().getMonth() + 1;
     const year = Number(req.query.year) || new Date().getFullYear();
 
-    const empresaId = req.user?.empresaId || 1;
+    const empresaId = req.empresaId!;
     const result = await analyticsService.getExpensePerformance(empresaId, month, year);
     res.json({ success: true, data: result });
   } catch (error: any) {
@@ -91,7 +91,7 @@ export async function getExpenseGoalsPerformance(req: Request, res: Response) {
 
 export async function getStaleProducts(req: Request, res: Response) {
   try {
-    const empresaId = req.user?.empresaId || 1;
+    const empresaId = req.empresaId!;
     const daysThreshold = Number(req.query.daysThreshold) || 30;
     const result = await analyticsService.getStaleProducts(empresaId, daysThreshold);
     res.json({ success: true, data: result });
@@ -102,7 +102,7 @@ export async function getStaleProducts(req: Request, res: Response) {
 
 export async function getFinancialSummary(req: Request, res: Response) {
   try {
-    const empresaId = req.user?.empresaId || 1;
+    const empresaId = req.empresaId!;
     const startDate = req.query.startDate as string | undefined;
     const endDate = req.query.endDate as string | undefined;
     const result = await analyticsService.getFinancialSummary(empresaId, startDate, endDate);
@@ -130,7 +130,7 @@ const parseAnalyticsQuery = (req: Request) => analyticsQuerySchema.parse(req.que
 
 export async function getDre(req: Request, res: Response) {
   try {
-    const empresaId = req.user?.empresaId || req.empresaId || 1;
+    const empresaId = req.empresaId!;
     const result = await analyticsService.getDre(empresaId, parseAnalyticsQuery(req));
     res.json({ success: true, data: result });
   } catch (error: any) {
@@ -140,7 +140,7 @@ export async function getDre(req: Request, res: Response) {
 
 export async function getProductMargins(req: Request, res: Response) {
   try {
-    const empresaId = req.user?.empresaId || req.empresaId || 1;
+    const empresaId = req.empresaId!;
     const result = await analyticsService.getProductMargins(empresaId, parseAnalyticsQuery(req));
     res.json({ success: true, data: result });
   } catch (error: any) {
@@ -150,7 +150,7 @@ export async function getProductMargins(req: Request, res: Response) {
 
 export async function getProfitPeriod(req: Request, res: Response) {
   try {
-    const empresaId = req.user?.empresaId || req.empresaId || 1;
+    const empresaId = req.empresaId!;
     const result = await analyticsService.getProfitByPeriod(empresaId, parseAnalyticsQuery(req));
     res.json({ success: true, data: result });
   } catch (error: any) {
@@ -160,7 +160,7 @@ export async function getProfitPeriod(req: Request, res: Response) {
 
 export async function getLowMarginProducts(req: Request, res: Response) {
   try {
-    const empresaId = req.user?.empresaId || req.empresaId || 1;
+    const empresaId = req.empresaId!;
     const result = await analyticsService.getLowMarginProducts(empresaId, parseAnalyticsQuery(req));
     res.json({ success: true, data: result });
   } catch (error: any) {
@@ -170,7 +170,7 @@ export async function getLowMarginProducts(req: Request, res: Response) {
 
 export async function getOperatorsRisk(req: Request, res: Response) {
   try {
-    const empresaId = req.user?.empresaId || req.empresaId || 1;
+    const empresaId = req.empresaId!;
     const result = await analyticsService.getOperatorsRisk(empresaId, parseAnalyticsQuery(req));
     res.json({ success: true, data: result });
   } catch (error: any) {
@@ -180,7 +180,7 @@ export async function getOperatorsRisk(req: Request, res: Response) {
 
 export async function getCustomerRanking(req: Request, res: Response) {
   try {
-    const empresaId = req.user?.empresaId || req.empresaId || 1;
+    const empresaId = req.empresaId!;
     const result = await analyticsService.getCustomerRanking(empresaId, parseAnalyticsQuery(req));
     res.json({ success: true, data: result });
   } catch (error: any) {
@@ -190,7 +190,7 @@ export async function getCustomerRanking(req: Request, res: Response) {
 
 export async function getStockRuptureForecast(req: Request, res: Response) {
   try {
-    const empresaId = req.user?.empresaId || req.empresaId || 1;
+    const empresaId = req.empresaId!;
     const result = await analyticsService.getStockRuptureForecast(empresaId, parseAnalyticsQuery(req));
     res.json({ success: true, data: result });
   } catch (error: any) {
@@ -200,7 +200,7 @@ export async function getStockRuptureForecast(req: Request, res: Response) {
 
 export async function getManagementAnalytics(req: Request, res: Response) {
   try {
-    const empresaId = req.user?.empresaId || req.empresaId || 1;
+    const empresaId = req.empresaId!;
     const result = await analyticsService.getManagementAnalytics(empresaId, parseAnalyticsQuery(req));
     res.json({ success: true, data: result });
   } catch (error: any) {

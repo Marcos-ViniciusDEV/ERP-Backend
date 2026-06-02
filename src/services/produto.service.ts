@@ -11,9 +11,10 @@
 
 import { eq, desc, and } from "drizzle-orm";
 import { getDb } from "../libs/db";
-import { produtos, movimentacoesEstoque, offers, itensVenda } from "../../drizzle/schema";
+import { configuracoesFiscais, produtos, movimentacoesEstoque, offers, itensVenda } from "../../drizzle/schema";
 import type { CreateProdutoInput, UpdateProdutoInput } from "../models/produto.model";
 import type { Produto } from "../types/produto.types";
+import { validateProdutoFiscal, type RegimeTributario } from "./produto-fiscal.service";
 
 /**
  * Lista todos os produtos
@@ -31,6 +32,16 @@ export async function getById(empresaId: number, id: number): Promise<Produto | 
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(produtos).where(and(eq(produtos.id, id), eq(produtos.empresaId, empresaId))).limit(1);
+  return result[0];
+}
+
+/**
+ * Busca produto por codigo dentro da empresa.
+ */
+export async function getByCodigo(empresaId: number, codigo: string): Promise<Produto | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(produtos).where(and(eq(produtos.codigo, codigo), eq(produtos.empresaId, empresaId))).limit(1);
   return result[0];
 }
 
@@ -169,6 +180,31 @@ export async function checkEstoque(empresaId: number, produtoId: number, quantid
 export async function produtosEstoqueBaixo(empresaId: number): Promise<Produto[]> {
   const produtos = await list(empresaId);
   return produtos.filter((p) => p.estoque <= p.estoqueMinimo);
+}
+
+/**
+ * Lista produtos com pendencias que bloqueiam emissao fiscal.
+ */
+export async function listFiscalPendencias(empresaId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [config] = await db
+    .select({ regimeTributario: configuracoesFiscais.regimeTributario })
+    .from(configuracoesFiscais)
+    .where(eq(configuracoesFiscais.empresaId, empresaId))
+    .limit(1);
+  const regime = (config?.regimeTributario || "SIMPLES_NACIONAL") as RegimeTributario;
+  const allProducts = await list(empresaId);
+  const pendentes = allProducts
+    .map((product) => ({
+      produtoId: product.id,
+      codigo: product.codigo,
+      descricao: product.descricao,
+      issues: validateProdutoFiscal(product, regime),
+    }))
+    .filter((product) => product.issues.length > 0);
+
+  return { regimeTributario: regime, totalProdutos: allProducts.length, totalPendentes: pendentes.length, pendentes };
 }
 
 /**

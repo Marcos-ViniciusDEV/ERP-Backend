@@ -6,13 +6,32 @@ import { empresas } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 
 import { loginSchema, registerSchema } from "../zod/auth.schema";
+import { refreshTokenSchema } from "../zod/auth.schema";
 
 export const login = async (req: Request, res: Response) => {
+  const identifier = String(req.body?.identifier || "");
+  const codigoEmpresa = req.body?.codigoEmpresa ? String(req.body.codigoEmpresa) : null;
   try {
-    const { identifier, password, codigoEmpresa } = loginSchema.parse(req.body);
-    const result = await authService.login(identifier, password, codigoEmpresa);
+    const input = loginSchema.parse(req.body);
+    const result = await authService.login(input.identifier, input.password, input.codigoEmpresa);
+    await authService.recordLoginAttempt({
+      usuarioId: result.user.id,
+      identificador: input.identifier,
+      codigoEmpresa: input.codigoEmpresa,
+      sucesso: true,
+      ip: req.ip,
+      userAgent: req.get("user-agent"),
+    });
     res.json({ success: true, ...result });
   } catch (error: any) {
+    await authService.recordLoginAttempt({
+      identificador: identifier,
+      codigoEmpresa,
+      sucesso: false,
+      ip: req.ip,
+      userAgent: req.get("user-agent"),
+      motivo: error instanceof ZodError ? "Dados de login invalidos" : error.message,
+    });
     if (error instanceof ZodError) {
       res.status(400).json({ error: "Dados de login invalidos" });
       return;
@@ -32,6 +51,36 @@ export const validateCompany = async (req: Request, res: Response) => {
   } catch (error: any) {
     res.status(401).json({ error: "Empresa ou senha de acesso invalidas" });
   }
+};
+
+export const checkoutCompany = async (req: Request, res: Response) => {
+  try {
+    const { cnpj, senhaAcesso } = req.body;
+    const empresa = await authService.validateCompany(cnpj, senhaAcesso);
+    const token = await authService.createCheckoutCompanyToken(empresa);
+    res.json({ success: true, token, empresa });
+  } catch {
+    res.status(401).json({ error: "Empresa ou senha de acesso invalidas" });
+  }
+};
+
+export const refresh = async (req: Request, res: Response) => {
+  try {
+    const { refreshToken } = refreshTokenSchema.parse(req.body);
+    res.json({ success: true, ...(await authService.refreshSession(refreshToken)) });
+  } catch {
+    res.status(401).json({ error: "Refresh token invalido ou expirado" });
+  }
+};
+
+export const logout = async (req: Request, res: Response) => {
+  try {
+    const { refreshToken } = refreshTokenSchema.parse(req.body);
+    await authService.revokeRefreshToken(refreshToken);
+  } catch {
+    // Logout remains idempotent even when the refresh token is absent or invalid.
+  }
+  res.json({ success: true });
 };
 
 export const register = async (req: Request, res: Response) => {

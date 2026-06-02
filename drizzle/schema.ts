@@ -45,6 +45,8 @@ export const empresas = mysqlTable("empresas", {
   limiteUsuarios: int("limiteUsuarios").default(5),
   limitePdvs: int("limitePdvs").default(2),
   limiteProdutos: int("limiteProdutos").default(1000),
+  onboardingEtapa: int("onboardingEtapa").default(1).notNull(),
+  onboardingConcluido: boolean("onboardingConcluido").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -118,6 +120,45 @@ export type Assinatura = typeof assinaturas.$inferSelect;
 export type InsertAssinatura = typeof assinaturas.$inferInsert;
 
 /**
+ * Checkout publico para a primeira cobranca da assinatura SaaS.
+ */
+export const checkoutAssinaturas = mysqlTable("checkout_assinaturas", {
+  id: int("id").autoincrement().primaryKey(),
+  uuid: varchar("uuid", { length: 36 }).notNull().unique(),
+  empresaId: int("empresaId").references(() => empresas.id),
+  usuarioId: int("usuarioId").references(() => users.id),
+  planoCodigo: varchar("planoCodigo", { length: 30 }).notNull(),
+  planoNome: varchar("planoNome", { length: 100 }).notNull(),
+  nomeResponsavel: varchar("nomeResponsavel", { length: 255 }).notNull(),
+  email: varchar("email", { length: 320 }).notNull(),
+  telefone: varchar("telefone", { length: 20 }),
+  cpfCnpj: varchar("cpfCnpj", { length: 20 }),
+  valorCentavos: int("valorCentavos").notNull(),
+  periodoMeses: int("periodoMeses").notNull().default(1),
+  formaPagamento: varchar("formaPagamento", { length: 40 }),
+  status: mysqlEnum("status", [
+    "PENDENTE",
+    "APROVADO",
+    "REJEITADO",
+    "CANCELADO",
+    "EXPIRADO",
+    "ERRO",
+  ]).default("PENDENTE").notNull(),
+  mercadoPagoPaymentId: varchar("mercadoPagoPaymentId", { length: 80 }).unique(),
+  mercadoPagoStatusDetail: varchar("mercadoPagoStatusDetail", { length: 120 }),
+  qrCodePix: text("qrCodePix"),
+  qrCodeBase64: text("qrCodeBase64"),
+  ticketUrl: text("ticketUrl"),
+  payloadOriginal: text("payloadOriginal"),
+  aprovadoEm: timestamp("aprovadoEm"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CheckoutAssinatura = typeof checkoutAssinaturas.$inferSelect;
+export type InsertCheckoutAssinatura = typeof checkoutAssinaturas.$inferInsert;
+
+/**
  * Licenças emitidas por empresa.
  */
 export const licencas = mysqlTable("licencas", {
@@ -164,6 +205,39 @@ export const users = mysqlTable("users", {
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
+
+/**
+ * Historico de tentativas de autenticacao para suporte e seguranca.
+ */
+export const loginHistorico = mysqlTable("login_historico", {
+  id: int("id").autoincrement().primaryKey(),
+  usuarioId: int("usuarioId").references(() => users.id),
+  identificador: varchar("identificador", { length: 320 }).notNull(),
+  codigoEmpresa: varchar("codigoEmpresa", { length: 120 }),
+  sucesso: boolean("sucesso").default(false).notNull(),
+  ip: varchar("ip", { length: 80 }),
+  userAgent: varchar("userAgent", { length: 500 }),
+  motivo: varchar("motivo", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type LoginHistorico = typeof loginHistorico.$inferSelect;
+export type InsertLoginHistorico = typeof loginHistorico.$inferInsert;
+
+/**
+ * Refresh tokens persistidos apenas como hash para rotacao de sessao.
+ */
+export const refreshTokens = mysqlTable("refresh_tokens", {
+  id: int("id").autoincrement().primaryKey(),
+  usuarioId: int("usuarioId").notNull().references(() => users.id),
+  tokenHash: varchar("tokenHash", { length: 64 }).notNull().unique(),
+  expiraEm: timestamp("expiraEm").notNull(),
+  revogadoEm: timestamp("revogadoEm"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type RefreshToken = typeof refreshTokens.$inferSelect;
+export type InsertRefreshToken = typeof refreshTokens.$inferInsert;
 
 /**
  * Departamentos para segmentação de produtos e relatórios.
@@ -424,6 +498,25 @@ export type FiscalProvedorCredencial = typeof fiscalProvedorCredenciais.$inferSe
 export type InsertFiscalProvedorCredencial = typeof fiscalProvedorCredenciais.$inferInsert;
 
 /**
+ * Credenciais fiscais globais administradas pelo backoffice Trakto.
+ */
+export const fiscalProvedorGlobalCredenciais = mysqlTable("fiscal_provedor_global_credenciais", {
+  id: int("id").autoincrement().primaryKey(),
+  provedor: mysqlEnum("provedor", ["FOCUS_NFE"]).notNull(),
+  ambiente: mysqlEnum("ambiente", ["HOMOLOGACAO", "PRODUCAO"]).default("HOMOLOGACAO").notNull(),
+  tokenCriptografado: text("tokenCriptografado").notNull(),
+  baseUrl: varchar("baseUrl", { length: 500 }),
+  companyId: varchar("companyId", { length: 120 }),
+  ativo: boolean("ativo").default(true).notNull(),
+  atualizadoPorUsuarioId: int("atualizadoPorUsuarioId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type FiscalProvedorGlobalCredencial = typeof fiscalProvedorGlobalCredenciais.$inferSelect;
+export type InsertFiscalProvedorGlobalCredencial = typeof fiscalProvedorGlobalCredenciais.$inferInsert;
+
+/**
  * Documentos fiscais gerados, autorizados, rejeitados ou cancelados.
  */
 export const documentosFiscais = mysqlTable("documentos_fiscais", {
@@ -530,6 +623,23 @@ export const fiscalTransmissoes = mysqlTable("fiscal_transmissoes", {
 
 export type FiscalTransmissao = typeof fiscalTransmissoes.$inferSelect;
 export type InsertFiscalTransmissao = typeof fiscalTransmissoes.$inferInsert;
+
+/**
+ * Auditoria funcional das alteracoes fiscais realizadas por usuarios.
+ */
+export const fiscalAuditoria = mysqlTable("fiscal_auditoria", {
+  id: int("id").autoincrement().primaryKey(),
+  empresaId: int("empresaId").notNull().references(() => empresas.id),
+  usuarioId: int("usuarioId").references(() => users.id),
+  acao: varchar("acao", { length: 80 }).notNull(),
+  entidade: varchar("entidade", { length: 80 }).notNull(),
+  entidadeId: varchar("entidadeId", { length: 80 }),
+  detalhesJson: text("detalhesJson"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type FiscalAuditoria = typeof fiscalAuditoria.$inferSelect;
+export type InsertFiscalAuditoria = typeof fiscalAuditoria.$inferInsert;
 
 /**
  * Equipamentos SAT/MFE vinculados aos PDVs.

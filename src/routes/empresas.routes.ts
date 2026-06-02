@@ -7,6 +7,8 @@ import { verifyPassword, hashPassword } from "../libs/password";
 import { nanoid } from "nanoid";
 import { authenticate } from "../middleware/auth.middleware";
 import { requireSuperAdmin } from "../middleware/tenant.middleware";
+import * as fiscalService from "../services/fiscal.service";
+import { empresaFiscalSchema } from "../zod/fiscal.schema";
 
 export const empresasRouter = Router();
 
@@ -164,7 +166,7 @@ empresasRouter.post("/trial", async (req: Request, res: Response) => {
       email,
       password: senhaHash,
       openId: `user_${nanoid(10)}`,
-      role: "trakto_admin",
+      role: "admin",
     });
 
     const user = {
@@ -172,7 +174,7 @@ empresasRouter.post("/trial", async (req: Request, res: Response) => {
       empresaId,
       name,
       email,
-      role: "trakto_admin",
+      role: "admin",
     };
 
     const token = await createToken(user as any);
@@ -190,6 +192,61 @@ empresasRouter.post("/trial", async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /empresas/perfil
+ * Retorna o cadastro central da empresa autenticada.
+ */
+empresasRouter.get("/perfil", authenticate, async (req: Request, res: Response) => {
+  try {
+    const empresaId = req.user?.empresaId;
+    if (!empresaId) {
+      res.status(401).json({ error: "Empresa nao identificada" });
+      return;
+    }
+
+    res.json(await fiscalService.getEmpresaFiscal(empresaId));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Erro ao buscar perfil da empresa" });
+  }
+});
+
+/**
+ * PUT /empresas/perfil
+ * Centraliza os dados cadastrais, fiscais e de qualificacao comercial da empresa.
+ */
+empresasRouter.put("/perfil", authenticate, async (req: Request, res: Response) => {
+  try {
+    const user = req.user;
+    if (!user?.empresaId) {
+      res.status(401).json({ error: "Empresa nao identificada" });
+      return;
+    }
+    if (!["admin", "trakto_admin"].includes(String(user.role).toLowerCase())) {
+      res.status(403).json({ error: "Somente administradores podem alterar os dados da empresa" });
+      return;
+    }
+
+    const fiscalInput = empresaFiscalSchema.parse(req.body);
+    await fiscalService.updateEmpresaFiscal(user.empresaId, fiscalInput, user.id);
+
+    const vendedores = Math.max(0, Number(req.body.vendedores || 0));
+    const db = await getDb();
+    if (!db) throw new Error("Database not available");
+    await db
+      .update(empresas)
+      .set({
+        tipoVarejo: typeof req.body.tipoVarejo === "string" ? req.body.tipoVarejo || null : null,
+        faturamentoMensal: typeof req.body.faturamentoMensal === "string" ? req.body.faturamentoMensal || null : null,
+        vendedores: Number.isFinite(vendedores) ? Math.floor(vendedores) : 0,
+      })
+      .where(eq(empresas.id, user.empresaId));
+
+    res.json(await fiscalService.getEmpresaFiscal(user.empresaId));
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || "Erro ao atualizar perfil da empresa" });
+  }
+});
+
+/**
  * PUT /empresas/crm
  * Atualiza dados de CRM (Qualificação de Lead)
  */
@@ -201,18 +258,88 @@ empresasRouter.put("/crm", authenticate, async (req: Request, res: Response) => 
       return;
     }
 
-    const { tipoVarejo, faturamentoMensal } = req.body;
+    const { tipoVarejo, faturamentoMensal, vendedores } = req.body;
 
     const db = await getDb();
     if (!db) throw new Error("Database not available");
 
     await db.update(empresas)
-      .set({ tipoVarejo, faturamentoMensal })
+      .set({ tipoVarejo, faturamentoMensal, vendedores })
       .where(eq(empresas.id, user.empresaId));
 
     res.json({ success: true, message: "Dados atualizados com sucesso" });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /empresas/onboarding
+ * Retorna progresso e dados basicos do onboarding da empresa autenticada.
+ */
+empresasRouter.get("/onboarding", authenticate, async (req: Request, res: Response) => {
+  try {
+    const empresaId = req.user?.empresaId;
+    if (!empresaId) {
+      res.status(401).json({ error: "Empresa nao identificada" });
+      return;
+    }
+
+    const db = await getDb();
+    if (!db) throw new Error("Database not available");
+    const [empresa] = await db
+      .select({
+        id: empresas.id,
+        razaoSocial: empresas.razaoSocial,
+        nomeFantasia: empresas.nomeFantasia,
+        cnpj: empresas.cnpj,
+        onboardingEtapa: empresas.onboardingEtapa,
+        onboardingConcluido: empresas.onboardingConcluido,
+      })
+      .from(empresas)
+      .where(eq(empresas.id, empresaId))
+      .limit(1);
+
+    if (!empresa) {
+      res.status(404).json({ error: "Empresa nao encontrada" });
+      return;
+    }
+    res.json(empresa);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /empresas/onboarding
+ * Salva a etapa atual para permitir retomada posterior.
+ */
+empresasRouter.put("/onboarding", authenticate, async (req: Request, res: Response) => {
+  try {
+    const empresaId = req.user?.empresaId;
+    if (!empresaId) {
+      res.status(401).json({ error: "Empresa nao identificada" });
+      return;
+    }
+
+    const etapa = Math.min(4, Math.max(1, Number(req.body.onboardingEtapa || 1)));
+    const payload: Record<string, unknown> = {
+      onboardingEtapa: etapa,
+      onboardingConcluido: Boolean(req.body.onboardingConcluido),
+    };
+    if (typeof req.body.nomeFantasia === "string" && req.body.nomeFantasia.trim()) {
+      payload.nomeFantasia = req.body.nomeFantasia.trim();
+    }
+    if (typeof req.body.razaoSocial === "string" && req.body.razaoSocial.trim()) {
+      payload.razaoSocial = req.body.razaoSocial.trim();
+    }
+
+    const db = await getDb();
+    if (!db) throw new Error("Database not available");
+    await db.update(empresas).set(payload).where(eq(empresas.id, empresaId));
+    res.json({ success: true, ...payload });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
   }
 });
 

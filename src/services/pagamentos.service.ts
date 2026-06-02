@@ -1,7 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
-import { ENV } from "../libs/env";
 import { getDb } from "../libs/db";
+import { decryptSecret, encryptSecret } from "../libs/secret-crypto";
 import {
   adquirentesEmpresa,
   configuracoesPagamentoEmpresa,
@@ -46,26 +45,6 @@ const PROVIDER_REQUIREMENTS: Record<string, { credentials?: string[]; config?: s
   getnet: { label: "Getnet", credentials: ["clientId", "clientSecret"], config: ["sellerId", "terminalSerial"] },
   efi: { label: "Efi", credentials: ["clientId", "clientSecret"], config: ["pixKey"] },
 };
-
-const encryptionKey = () => createHash("sha256").update(ENV.jwtSecret || "dev-secret").digest();
-
-function encryptSecret(value?: string | null) {
-  if (!value) return null;
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
-  const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return `${iv.toString("base64")}:${tag.toString("base64")}:${encrypted.toString("base64")}`;
-}
-
-function decryptSecret(value?: string | null) {
-  if (!value) return null;
-  const [ivRaw, tagRaw, encryptedRaw] = value.split(":");
-  if (!ivRaw || !tagRaw || !encryptedRaw) return null;
-  const decipher = createDecipheriv("aes-256-gcm", encryptionKey(), Buffer.from(ivRaw, "base64"));
-  decipher.setAuthTag(Buffer.from(tagRaw, "base64"));
-  return Buffer.concat([decipher.update(Buffer.from(encryptedRaw, "base64")), decipher.final()]).toString("utf8");
-}
 
 function maskSecret(value?: string | null) {
   if (!value) return null;

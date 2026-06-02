@@ -7,6 +7,16 @@ jest.mock("../../src/libs/db", () => ({
   getDb: jest.fn(),
 }));
 
+jest.mock("../../src/services/pagamentos.service", () => ({
+  getPaymentConfigBundle: jest.fn(async () => ({
+    formasPagamento: [
+      { id: 1, nome: "Dinheiro", tipo: "DINHEIRO", codigo: "dinheiro", modoCaptura: "MANUAL", ativo: true },
+    ],
+    adquirentes: [],
+    terminais: [],
+  })),
+}));
+
 // Mock Drizzle schema
 jest.mock("../../drizzle/schema", () => ({
   produtos: {
@@ -20,6 +30,17 @@ jest.mock("../../drizzle/schema", () => ({
     precoPdv: "precoPdv",
     precoVenda: "precoVenda",
     unidade: "unidade",
+    ncm: "ncm",
+    cest: "cest",
+    origem: "origem",
+    cstIcms: "cstIcms",
+    csosnIcms: "csosnIcms",
+    cfopPadraoVenda: "cfopPadraoVenda",
+    aliquotaIcms: "aliquotaIcms",
+    aliquotaPis: "aliquotaPis",
+    aliquotaCofins: "aliquotaCofins",
+    pisCst: "pisCst",
+    cofinsCst: "cofinsCst",
   },
   users: {
     id: "id",
@@ -47,6 +68,32 @@ jest.mock("../../drizzle/schema", () => ({
     valor: "valor",
     operadorId: "operadorId",
     dataMovimento: "dataMovimento",
+  },
+  configuracoesFiscais: {
+    empresaId: "empresaId",
+    habilitarNfce: "habilitarNfce",
+    ambiente: "ambiente",
+    regimeTributario: "regimeTributario",
+    serieNfce: "serieNfce",
+    serieNfe: "serieNfe",
+    proximoNumeroNfce: "proximoNumeroNfce",
+    proximoNumeroNfe: "proximoNumeroNfe",
+    idTokenIsc: "idTokenIsc",
+    csc: "csc",
+    certificadoDigitalCaminho: "certificadoDigitalCaminho",
+    certificadoValidade: "certificadoValidade",
+  },
+  empresas: {
+    id: "id",
+    cnpj: "cnpj",
+    razaoSocial: "razaoSocial",
+    nomeFantasia: "nomeFantasia",
+  },
+  pinpadPareamentoKeys: {
+    id: "id",
+  },
+  terminaisPagamento: {
+    id: "id",
   },
 }));
 
@@ -91,6 +138,9 @@ describe("PDVService", () => {
       mockDb.where
         .mockResolvedValueOnce(mockProdutos)
         .mockResolvedValueOnce(mockUsers);
+      mockDb.limit
+        .mockResolvedValueOnce([{ habilitarNfce: true, ambiente: "HOMOLOGACAO" }])
+        .mockResolvedValueOnce([{ id: 1, cnpj: "00000000000100", razaoSocial: "Empresa Teste" }]);
 
       const result = await pdvService.getCargaInicial(1);
 

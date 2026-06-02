@@ -13,6 +13,7 @@ export const fiscalConfigSchema = z.object({
   serieNfe: z.number().int().min(1).default(1),
   idTokenIsc: z.string().max(10).optional().nullable(),
   csc: z.string().max(255).optional().nullable(),
+  confirmarAlteracaoCritica: z.boolean().default(false),
 });
 
 export const fiscalPreflightSchema = z.object({
@@ -26,6 +27,21 @@ export const fiscalPrepareSchema = fiscalPreflightSchema.extend({
 
 export const fiscalCancelSchema = z.object({
   justificativa: z.string().min(15, "Justificativa deve ter pelo menos 15 caracteres"),
+});
+
+export const fiscalCartaCorrecaoSchema = z.object({
+  correcao: z.string().min(15, "Correcao deve ter pelo menos 15 caracteres").max(1000),
+});
+
+export const fiscalInutilizacaoSchema = z.object({
+  modelo: z.enum(["NFE", "NFCE"]),
+  serie: z.number().int().min(1),
+  numeroInicial: z.number().int().min(1),
+  numeroFinal: z.number().int().min(1),
+  justificativa: z.string().min(15, "Justificativa deve ter pelo menos 15 caracteres"),
+}).refine((data) => data.numeroFinal >= data.numeroInicial, {
+  message: "Numero final deve ser maior ou igual ao numero inicial",
+  path: ["numeroFinal"],
 });
 
 export const certificadoDigitalSchema = z.object({
@@ -78,7 +94,7 @@ export const empresaFiscalSchema = z.object({
 });
 
 export const fiscalProviderCredentialSchema = z.object({
-  provedor: z.enum(["FOCUS_NFE", "NFE_IO", "PLUGNOTAS"]).default("FOCUS_NFE"),
+  provedor: z.literal("FOCUS_NFE").default("FOCUS_NFE"),
   ambiente: z.enum(["HOMOLOGACAO", "PRODUCAO"]).default("HOMOLOGACAO"),
   token: z.string().min(1),
   baseUrl: z.string().url().optional().nullable().or(z.literal("")),
@@ -89,6 +105,8 @@ export const fiscalProviderCredentialSchema = z.object({
 export type FiscalConfigInput = z.infer<typeof fiscalConfigSchema>;
 export type FiscalPreflightInput = z.infer<typeof fiscalPreflightSchema>;
 export type FiscalPrepareInput = z.infer<typeof fiscalPrepareSchema>;
+export type FiscalCartaCorrecaoInput = z.infer<typeof fiscalCartaCorrecaoSchema>;
+export type FiscalInutilizacaoInput = z.infer<typeof fiscalInutilizacaoSchema>;
 export type CertificadoDigitalInput = z.infer<typeof certificadoDigitalSchema>;
 export type SatMfeEquipamentoInput = z.infer<typeof satMfeEquipamentoSchema>;
 export type SatMfeCupomInput = z.infer<typeof satMfeCupomSchema>;

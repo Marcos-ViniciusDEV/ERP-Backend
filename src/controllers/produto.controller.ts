@@ -13,6 +13,7 @@ import { Request, Response } from "express";
 import * as produtoService from "../services/produto.service";
 import * as kardexService from "../services/kardex.service";
 import * as vendaService from "../services/venda.service";
+import * as produtoImportacaoService from "../services/produto-importacao.service";
 import type { CreateProdutoInput, UpdateProdutoInput } from "../models/produto.model";
 
 /**
@@ -26,6 +27,52 @@ export async function list(req: Request, res: Response) {
   } catch (error: any) {
     console.error("Error in ProdutoController.list:", error);
     res.status(500).json({ error: "Erro ao buscar produtos", details: error.message });
+  }
+}
+
+/**
+ * GET /produtos/fiscal/pendencias
+ * Lista produtos que ainda nao estao prontos para emissao fiscal.
+ */
+export async function listFiscalPendencias(req: Request, res: Response) {
+  try {
+    res.json(await produtoService.listFiscalPendencias(req.empresaId!));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Erro ao buscar pendencias fiscais" });
+  }
+}
+
+/**
+ * GET /produtos/importacao/template
+ * Baixa o template CSV para importacao inicial.
+ */
+export async function downloadImportTemplate(_req: Request, res: Response) {
+  const csv = produtoImportacaoService.createProdutoImportTemplateCsv();
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", 'attachment; filename="template-importacao-produtos.csv"');
+  res.send(csv);
+}
+
+/**
+ * POST /produtos/importacao
+ * Importa produtos a partir de um arquivo CSV ou XLSX.
+ */
+export async function importProdutos(req: Request, res: Response) {
+  try {
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      res.status(400).json({ error: "Envie um arquivo CSV ou XLSX." });
+      return;
+    }
+    const filename = decodeURIComponent(String(req.header("x-file-name") || ""));
+    if (!filename) {
+      res.status(400).json({ error: "Nome do arquivo nao informado." });
+      return;
+    }
+    const result = await produtoImportacaoService.importProdutos(req.empresaId!, req.body, filename);
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Erro ao importar produtos";
+    res.status(400).json({ error: message });
   }
 }
 

@@ -28,6 +28,7 @@ import { supportRouter } from "./support.routes";
 import { reportsRouter } from "./reports.routes";
 import { fiscalRouter } from "./fiscal.routes";
 import { pagamentosRouter } from "./pagamentos.routes";
+import { checkoutRouter } from "./checkout.routes";
 
 
 import { authenticate } from "../middleware/auth.middleware";
@@ -36,6 +37,7 @@ import { requireTenant } from "../middleware/tenant.middleware";
 export const appRouter = Router();
 
 appRouter.use("/auth", authRouter);
+appRouter.use("/checkout", checkoutRouter);
 appRouter.use("/saas", saasRouter);
 appRouter.use("/empresas", empresasRouter); // Inclui ativação de PDV e admin de tenants
 

@@ -36,7 +36,14 @@ jest.mock("../../drizzle/schema", () => ({
     observacao: "observacao",
     operadorId: "operadorId",
     operadorNome: "operadorNome",
+    clienteId: "clienteId",
     createdAt: "createdAt",
+  },
+  clientes: {
+    id: "id",
+    empresaId: "empresaId",
+    nome: "nome",
+    cpfCnpj: "cpfCnpj",
   },
   itensVenda: {
     id: "id",

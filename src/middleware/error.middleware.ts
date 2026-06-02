@@ -1,7 +1,8 @@
 import type { ErrorRequestHandler, Request, Response } from "express";
+import { ZodError } from "zod";
 
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
-  const status = Number(err?.status || err?.statusCode || 500);
+  const status = err instanceof ZodError ? 400 : Number(err?.status || err?.statusCode || 500);
   const safeStatus = status >= 400 && status < 600 ? status : 500;
 
   console.error(`[ERROR] ${req.method} ${req.originalUrl}`, {
@@ -13,7 +14,11 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   res.status(safeStatus).json({
     status: "error",
     message:
-      safeStatus >= 500
+      typeof err?.publicMessage === "string"
+        ? err.publicMessage
+        : err instanceof ZodError
+        ? "Dados invalidos. Revise os campos informados."
+        : safeStatus >= 500
         ? "Ocorreu um erro interno no servidor."
         : "Nao foi possivel processar a requisicao.",
   });

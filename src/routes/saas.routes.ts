@@ -8,6 +8,8 @@ export const saasRouter = Router();
 saasRouter.use(authenticate, requireSuperAdmin);
 
 saasRouter.get("/dashboard", saasController.dashboard);
+saasRouter.get("/fiscal/provider", saasController.listFiscalProviderCredentials);
+saasRouter.post("/fiscal/provider", saasController.upsertFiscalProviderCredential);
 
 saasRouter.get("/empresas", saasController.listEmpresas);
 saasRouter.get("/empresas/:id", saasController.getEmpresa);

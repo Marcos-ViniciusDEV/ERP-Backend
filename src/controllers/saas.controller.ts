@@ -13,6 +13,8 @@ import {
   users,
 } from "../../drizzle/schema";
 import { hashPassword } from "../libs/password";
+import { fiscalProviderCredentialSchema } from "../zod/fiscal.schema";
+import { listGlobalFiscalProviderCredentials, upsertGlobalFiscalProviderCredential } from "../services/fiscal-provider.service";
 
 const handleError = (res: Response, error: unknown) => {
   const message = error instanceof Error ? error.message : "Erro interno";
@@ -43,6 +45,23 @@ const extractYouTubeVideoId = (url?: string | null) => {
 };
 
 export const saasController = {
+  async listFiscalProviderCredentials(_req: Request, res: Response) {
+    try {
+      res.json(await listGlobalFiscalProviderCredentials());
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+
+  async upsertFiscalProviderCredential(req: Request, res: Response) {
+    try {
+      const input = fiscalProviderCredentialSchema.parse(req.body);
+      res.status(201).json(await upsertGlobalFiscalProviderCredential(input, req.user?.id));
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+
   async dashboard(_req: Request, res: Response) {
     try {
       const db = await requireDb();

@@ -12,6 +12,7 @@ jest.mock("../../src/libs/env", () => ({
   ENV: {
     jwtSecret: "test-secret",
     jwtExpiresIn: "1h",
+    refreshTokenDays: 7,
     ownerOpenId: "owner-id",
   },
 }));
@@ -39,6 +40,11 @@ jest.mock("../../drizzle/schema", () => ({
     codigoAcesso: "codigoAcesso",
     ativo: "ativo",
   },
+  loginHistorico: {},
+  refreshTokens: {
+    id: "id",
+    tokenHash: "tokenHash",
+  },
 }));
 
 describe("AuthService", () => {
@@ -48,6 +54,8 @@ describe("AuthService", () => {
     where: jest.fn(),
     limit: jest.fn(),
     insert: jest.fn(),
+    update: jest.fn(),
+    set: jest.fn(),
     values: jest.fn(),
     onDuplicateKeyUpdate: jest.fn(),
   } as any;
@@ -60,6 +68,8 @@ describe("AuthService", () => {
     mockDb.from.mockReturnValue(mockDb);
     mockDb.where.mockReturnValue(mockDb);
     mockDb.insert.mockReturnValue(mockDb);
+    mockDb.update.mockReturnValue(mockDb);
+    mockDb.set.mockReturnValue(mockDb);
     mockDb.onDuplicateKeyUpdate.mockReturnValue(mockDb);
     
     // Default leaf methods
@@ -152,6 +162,21 @@ describe("AuthService", () => {
 
       await expect(authService.register("existing@example.com", "User", "password"))
         .rejects.toThrow("Este e-mail já está registrado");
+    });
+  });
+
+  describe("refreshSession", () => {
+    it("rotates a valid refresh token", async () => {
+      mockDb.limit
+        .mockResolvedValueOnce([{ id: 10, usuarioId: 1, expiraEm: new Date(Date.now() + 60_000), revogadoEm: null }])
+        .mockResolvedValueOnce([{ id: 1, openId: "test-openid", email: "test@example.com", role: "user", empresaId: 1 }]);
+
+      const result = await authService.refreshSession("refresh-token-valido-com-mais-de-32-caracteres");
+
+      expect(result.token).toBe("mock-token");
+      expect(result.refreshToken).toEqual(expect.any(String));
+      expect(result.refreshToken).not.toBe("refresh-token-valido-com-mais-de-32-caracteres");
+      expect(mockDb.update).toHaveBeenCalled();
     });
   });
 });
